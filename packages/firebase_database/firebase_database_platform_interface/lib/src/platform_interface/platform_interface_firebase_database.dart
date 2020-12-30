@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/*melos-nullsafety-remove-start*/
 import 'dart:async';
-/*melos-nullsafety-remove-end*/
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database_platform_interface/firebase_database_platform_interface.dart';
@@ -152,12 +150,14 @@ abstract class FirebaseDatabasePlatform extends PlatformInterface {
   }
 
   /// By default Firebase Database will use up to 10MB of disk space to cache data.
-  /// 
+  ///
   /// If the cache grows beyond this size, Firebase Database will start removing
-  /// data that hasn't been recently used. If you find that your application 
+  /// data that hasn't been recently used. If you find that your application
   /// caches too little or too much data, call this method to change the cache size.
   /// This method must be called before creating your first Database reference
   /// and only needs to be called once per application.
+  ///
+  /// Note; this only applies to native platforms. This is a noop on web.
   Future<void> setPersistenceCacheSizeBytes(int /*!*/ bytes) {
     throw UnimplementedError(
         "setPersistenceCacheSizeBytes() is not implemented");

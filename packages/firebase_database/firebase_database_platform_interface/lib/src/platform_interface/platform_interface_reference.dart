@@ -9,7 +9,6 @@ import 'dart:async';
 import 'package:firebase_database_platform_interface/firebase_database_platform_interface.dart';
 
 import 'package:firebase_database_platform_interface/src/internal/pointer.dart';
-import 'package:firebase_database_platform_interface/src/internal/push_id_generator.dart';
 
 /// A [ReferencePlatform] can be used for querying nodes on the database and mutating
 /// nodes.
