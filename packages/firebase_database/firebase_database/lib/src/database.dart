@@ -4,6 +4,10 @@
 
 part of firebase_database;
 
+/// The entry point for accessing [FirebaseDatabase].
+/// 
+/// To get an instance, call [FirebaseDatabase.instance]. To use a non-default
+/// [FirebaseApp] instance, use [FirebaseDatabase.instanceFor] instead.
 class FirebaseDatabase extends FirebasePluginPlatform {
   // Cached and lazily loaded instance of [DatabasePlatform] to avoid
   // creating a [MethodChannelDatabase] when not needed or creating an
@@ -37,7 +41,7 @@ class FirebaseDatabase extends FirebasePluginPlatform {
   static FirebaseDatabase /*!*/ instanceFor({FirebaseApp app}) {
     assert(app != null);
     if (_cachedInstances.containsKey(app.name)) {
-      return _cachedInstances[app.name];
+      return _cachedInstances[app.name] /*!*/;
     }
 
     FirebaseDatabase newInstance = FirebaseDatabase._(app: app);
