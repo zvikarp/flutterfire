@@ -147,6 +147,7 @@ class Reference extends Query {
   /// [transaction] to modify the same data.
   ///
   /// Passing `null` to [update] will remove the data at this location.
+  // TODO(ehesp): If a value is passed, should it always be a Map?
   Future<void> update(dynamic value) {
     return _delegate.update(value);
   }

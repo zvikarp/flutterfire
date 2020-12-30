@@ -9,7 +9,7 @@ flutter:
     platforms:
       android:
         package: io.flutter.plugins.firebase.database
-        pluginClass: FirebaseDatabasePlugin
+        pluginClass: FlutterFirebaseDatabasePlugin
       ios:
         pluginClass: FLTFirebaseDatabasePlugin
       macos:

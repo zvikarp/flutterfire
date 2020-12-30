@@ -38,6 +38,13 @@ class MethodChannelQuery extends QueryPlatform {
     );
   }
 
+  String _getValueType(dynamic value) {
+    if (value is String) return 'string';
+    if (value is num) return 'number';
+    if (value is bool) return 'boolean';
+    return 'null';
+  }
+
   @override
   ReferencePlatform get ref {
     return MethodChannelReference(database, _ref);
@@ -47,8 +54,9 @@ class MethodChannelQuery extends QueryPlatform {
   Future<DataSnapshotPlatform> once() async {
     try {
       Map<String, dynamic> data = await MethodChannelFirebaseDatabase.channel
-          .invokeMapMethod<String, dynamic>('Query#get', <String, dynamic>{
+          .invokeMapMethod<String, dynamic>('Query#once', <String, dynamic>{
         'appName': _database.app.name,
+        'path': _ref,
         'modifiers': _modifiers
       });
 
@@ -65,6 +73,7 @@ class MethodChannelQuery extends QueryPlatform {
       'type': 'filter',
       'name': 'endAt',
       'value': value,
+      'valueType': _getValueType(value),
       'key': key,
     };
 
@@ -80,6 +89,7 @@ class MethodChannelQuery extends QueryPlatform {
       'type': 'filter',
       'name': 'startAt',
       'value': value,
+      'valueType': _getValueType(value),
       'key': key,
     };
 
@@ -95,7 +105,6 @@ class MethodChannelQuery extends QueryPlatform {
       'type': 'limit',
       'name': 'limitToFirst',
       'value': limit,
-      // 'viewFrom': 'left', // TODO: needed?
     };
 
     return _copyWithParameters(modifier, <String, dynamic>{
@@ -110,7 +119,6 @@ class MethodChannelQuery extends QueryPlatform {
       'type': 'limit',
       'name': 'limitToLast',
       'value': limit,
-      // 'viewFrom': 'right', // TODO: needed?
     };
 
     return _copyWithParameters(modifier, <String, dynamic>{
