@@ -11,3 +11,4 @@ export 'src/platform_interface/platform_interface_data_snapshot.dart';
 export 'src/platform_interface/platform_interface_on_disconnect.dart';
 
 export 'src/server_value.dart';
+export 'src/types.dart';

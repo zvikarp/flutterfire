@@ -19,9 +19,7 @@ class MethodChannelReference extends MethodChannelQuery
   String get key => throw UnimplementedError();
 
   @override
-  OnDisconnectPlatform onDisconnect() {
-    
-  }
+  OnDisconnectPlatform onDisconnect() {}
 
   @override
   ReferencePlatform get parent => throw UnimplementedError();
@@ -64,10 +62,7 @@ class MethodChannelReference extends MethodChannelQuery
   }
 
   @override
-  Future<void> transaction() {
-    // TODO: implement transaction
-    throw UnimplementedError();
-  }
+  Future<T> transaction<T>(TransactionHandler<T> handler, Duration timeout, bool applyLocally) {}
 
   @override
   Future<void> update(value) {

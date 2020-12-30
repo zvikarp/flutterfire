@@ -63,9 +63,11 @@ class Reference extends Query {
     return _delegate.setWithPriority(value, priority);
   }
 
-  // TODO args
-  Future<void> transaction() {
-    return _delegate.transaction();
+  Future<T> transaction<T>(TransactionHandler<T> handler,
+      {Duration timeout = const Duration(seconds: 5),
+      bool applyLocally = true}) {
+    assert(timeout.inMilliseconds > 0);
+    return _delegate.transaction(handler, timeout, applyLocally);
   }
 
   Future<void> update(dynamic value) {

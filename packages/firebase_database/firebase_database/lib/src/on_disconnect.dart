@@ -7,7 +7,9 @@ part of firebase_database;
 class OnDisconnect {
   final OnDisconnectPlatform _delegate;
 
-  OnDisconnect._(this._delegate);
+  OnDisconnect._(this._delegate) {
+    OnDisconnectPlatform.verifyExtends(_delegate);
+  }
 
   Future<void> cancel() {
     return _delegate.cancel();

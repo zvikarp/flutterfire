@@ -45,10 +45,10 @@ class Pointer {
     return parentComponents.join('/');
   }
 
-  /// Returns a path pointing to a child node of the current path.
-  String child(String /*!*/ path) {
-    Pointer _pointer = Pointer(path);
-    return "$path/${_pointer.path}";
+  /// Returns a [Pointer] to a child node of the current path.
+  Pointer child(String /*!*/ childPath) {
+    Pointer _pointer = Pointer(childPath);
+    return Pointer("$path/${_pointer.path}");
   }
 
   @override

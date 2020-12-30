@@ -59,7 +59,7 @@ abstract class ReferencePlatform extends QueryPlatform {
   }
 
   ReferencePlatform child(String /*!*/ path) {
-    return database.ref(_pointer.child(path));
+    return database.ref(_pointer.child(path).path);
   }
 
   OnDisconnectPlatform onDisconnect() {
@@ -68,7 +68,7 @@ abstract class ReferencePlatform extends QueryPlatform {
 
   ReferencePlatform push() {
     final String key = PushIdGenerator.generatePushChildName();
-    return database.ref(_pointer.child(key));
+    return database.ref(_pointer.child(key).path);
   }
 
   Future<void> remove() {
@@ -87,8 +87,8 @@ abstract class ReferencePlatform extends QueryPlatform {
     throw UnimplementedError("setWithPriority() is not implemented");
   }
 
-  // TODO args
-  Future<void> transaction() {
+  Future<T> transaction<T>(
+      TransactionHandler<T> handler, Duration timeout, bool applyLocally) {
     throw UnimplementedError("transaction() is not implemented");
   }
 

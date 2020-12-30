@@ -19,6 +19,10 @@ class OnDisconnectPlatform extends PlatformInterface {
   /// Create a [OnDisconnectPlatform] instance.
   OnDisconnectPlatform(this._database, this._ref) : super(token: _token);
 
+  static verifyExtends(OnDisconnectPlatform instance) {
+    PlatformInterface.verifyToken(instance, _token);
+  }
+
   static final Object _token = Object();
 
   Future<void> cancel() {
