@@ -10,7 +10,8 @@ import 'package:firebase_database_platform_interface/src/internal/pointer.dart';
 import 'platform_interface_reference.dart';
 
 /// The action for a [DataSnapshotPlatform] [forEach] call.
-typedef bool /*?*/ DataSnapshotForEach(DataSnapshotPlatform /*!*/ snapshot);
+typedef bool /*?*/ DataSnapshotForEach(
+    DataSnapshotPlatform /*!*/ snapshot, int /*!*/ index);
 
 /// A DataSnapshot contains data from a Database location.
 ///
@@ -24,8 +25,8 @@ class DataSnapshotPlatform extends PlatformInterface {
   final Map<String, dynamic> _data;
 
   /// Constructs a new [DataSnapshotPlatform] instance.
-  DataSnapshotPlatform(String path, this._data)
-      : _pointer = Pointer(path),
+  DataSnapshotPlatform(String ref, this._data)
+      : _pointer = Pointer(ref),
         super(token: _token);
 
   /// Ensures delegate implementations of a [DataSnapshot] extend this class.
@@ -70,7 +71,16 @@ class DataSnapshotPlatform extends PlatformInterface {
     return _data['data'] != null;
   }
 
-  // exportVal?
+  /// Exports the entire contents of the [DataSnapshot] as a [Map].
+  ///
+  /// This method returns the data and priority in such a way it is suitable
+  /// for backing up your data.
+  Map<String, dynamic> /*!*/ exportVal() {
+    return <String, dynamic>{
+      '.value': value,
+      '.priority': getPriority(),
+    };
+  }
 
   /// Enumerates the top-level children in the [DataSnapshotPlatform].
   ///
@@ -91,13 +101,23 @@ class DataSnapshotPlatform extends PlatformInterface {
     return _data['priority'];
   }
 
+  /// A list of child keys for this [DataSnapshotPlatform].
+  ///
+  /// In cases where a [Map] is stored on the database, child keys are used
+  /// for iteration with the [forEach] method to guarentee order.
+  ///
+  /// Note; this is not exposed to the user, instead they should call [forEach].
+  List<String> getChildKeys() {
+    return _data['childKeys'] == null ? [] : List.from(_data['childKeys']);
+  }
+
   /// Returns true if the specified child path has (non-null) data.
   bool hasChild(String /*!*/ path) {
     if (!exists() || value is! Map) {
       return false;
     }
 
-    return value[path] == null ? false : true;
+    return value is Map && value[path] != null;
   }
 
   /// Returns whether or not the [DataSnapshotPlatform] has any non-null child properties.

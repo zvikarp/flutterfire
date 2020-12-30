@@ -78,6 +78,11 @@ class Query {
     return Query._(_database, modified);
   }
 
+  /// Returns a [Reference] to the Query's location.
+  Reference get ref {
+    return Reference._(_database, _delegate.ref);
+  }
+
   /// Creates a [Query] with the specified ending point.
   ///
   /// Using [startAt], [endAt] and [equalTo] allows you to choose arbitrary

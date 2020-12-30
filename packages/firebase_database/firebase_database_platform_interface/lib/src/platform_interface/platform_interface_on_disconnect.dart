@@ -5,21 +5,14 @@
 import 'dart:async';
 
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
-import 'package:firebase_database_platform_interface/firebase_database_platform_interface.dart';
 
 /// The [OnDisconnect] class allows you to write or clear data when your client
 /// disconnects from the Database server. These updates occur whether your client
 /// disconnects cleanly or not, so you can rely on them to clean up data even if
 /// a connection is dropped or a client crashes.
 class OnDisconnectPlatform extends PlatformInterface {
-  /// The [FirebaseDatabasePlatform] interface for this current query.
-  final FirebaseDatabasePlatform _database;
-
-  /// The [ReferencePlatform] interface for this current query.
-  final ReferencePlatform _ref;
-
-  /// Create a [OnDisconnectPlatform] instance.
-  OnDisconnectPlatform(this._database, this._ref) : super(token: _token);
+  /// Constructs a new [OnDisconnectPlatform] instance.
+  OnDisconnectPlatform() : super(token: _token);
 
   /// Ensures any delegate implementations extend this platform implementation.
   static verifyExtends(OnDisconnectPlatform instance) {

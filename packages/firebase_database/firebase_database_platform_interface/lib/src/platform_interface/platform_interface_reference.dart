@@ -21,7 +21,7 @@ abstract class ReferencePlatform extends QueryPlatform {
     this.database,
     String /*?*/ path,
   )   : _pointer = Pointer(path),
-        super(database, database.ref(path), {});
+        super(database, {});
 
   /// The Database instance associated with this document reference
   final FirebaseDatabasePlatform database;
@@ -49,6 +49,11 @@ abstract class ReferencePlatform extends QueryPlatform {
     throw UnimplementedError("parent is not implemented");
   }
 
+  /// The root [Reference] of the Database.
+  ReferencePlatform /*?*/ get root {
+    throw UnimplementedError("root is not implemented");
+  }
+
   /// Gets a [Reference] for the location at the specified relative path.
   ///
   /// The relative path can either be a simple child name (for example, "ada")
@@ -69,8 +74,7 @@ abstract class ReferencePlatform extends QueryPlatform {
   /// so the resulting list of items is chronologically sorted. The keys are
   /// also designed to be unguessable (they contain 72 random bits of entropy).
   ReferencePlatform push() {
-    final String key = PushIdGenerator.generatePushChildName();
-    return database.ref(_pointer.child(key).path);
+    throw UnimplementedError("push() is not implemented");
   }
 
   /// Removes the data at this Database location.
@@ -130,7 +134,7 @@ abstract class ReferencePlatform extends QueryPlatform {
   /// in order to perform a transaction. This is because the client-side nature
   /// of transactions requires the client to read the data in order to
   /// transactionally update it.
-  Future<T> transaction<T>(
+  Future<DataSnapshotPlatform> transaction<T>(
       TransactionHandler<T> handler, Duration timeout, bool applyLocally) {
     throw UnimplementedError("transaction() is not implemented");
   }

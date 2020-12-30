@@ -36,6 +36,11 @@ class Reference extends Query {
     return Reference._(_database, parentReferencePlatform);
   }
 
+  /// The root [Reference] of the Database.
+  Reference /*!*/ get root {
+    return Reference._(_database, _delegate.root);
+  }
+
   /// Gets a [Reference] for the location at the specified relative path.
   ///
   /// The relative path can either be a simple child name (for example, "ada")
@@ -118,11 +123,12 @@ class Reference extends Query {
   /// in order to perform a transaction. This is because the client-side nature
   /// of transactions requires the client to read the data in order to
   /// transactionally update it.
-  Future<T> transaction<T>(TransactionHandler<T> handler,
+  Future<DataSnapshot> transaction<T>(TransactionHandler<T> handler,
       {Duration timeout = const Duration(seconds: 5),
-      bool applyLocally = true}) {
+      bool applyLocally = true}) async {
     assert(timeout.inMilliseconds > 0);
-    return _delegate.transaction(handler, timeout, applyLocally);
+    return DataSnapshot._(
+        _database, await _delegate.transaction(handler, timeout, applyLocally));
   }
 
   /// Writes multiple values to the Database at once.

@@ -2,12 +2,11 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-/*melos-nullsafety-remove-start*/
 import 'dart:async';
-/*melos-nullsafety-remove-end*/
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database_platform_interface/firebase_database_platform_interface.dart';
+import 'package:firebase_database_platform_interface/src/method_channel/method_channel_reference.dart';
 import 'package:flutter/services.dart';
 
 import 'utils/exception.dart';
@@ -16,9 +15,28 @@ import 'utils/exception.dart';
 ///
 /// You can get an instance by calling [FirebaseDatabase.instance].
 class MethodChannelFirebaseDatabase extends FirebaseDatabasePlatform {
+  bool _initialized = false;
+
+  int /*?*/ _serverTimeOffset;
+
   /// Create an instance of [MethodChannelFirebaseDatabase].
   MethodChannelFirebaseDatabase({FirebaseApp /*!*/ app})
-      : super(appInstance: app);
+      : super(appInstance: app) {
+    if (_initialized) return;
+    _syncServerTimeOffset();
+    _initialized = true;
+  }
+
+  _syncServerTimeOffset() {
+    const EventChannel _syncServerTimeOffsetStream = EventChannel(
+        'plugins.flutter.io/firebase_database#syncServerTimeOffset');
+
+    if (_serverTimeOffset == null) {
+      _syncServerTimeOffsetStream.receiveBroadcastStream().listen((data) {
+        _serverTimeOffset = data as int;
+      });
+    }
+  }
 
   /// Gets a [FirebaseFirestorePlatform] with specific arguments such as a different
   /// [FirebaseApp].
@@ -34,6 +52,12 @@ class MethodChannelFirebaseDatabase extends FirebaseDatabasePlatform {
   @override
   FirebaseDatabasePlatform setInitialValues() {
     return this;
+  }
+
+  @override
+  DateTime getServerTime() {
+    return DateTime.fromMillisecondsSinceEpoch(
+        DateTime.now().millisecondsSinceEpoch + _serverTimeOffset ?? 0);
   }
 
   @override
@@ -54,5 +78,10 @@ class MethodChannelFirebaseDatabase extends FirebaseDatabasePlatform {
     } catch (e, s) {
       throw convertPlatformException(e, s);
     }
+  }
+
+  @override
+  ReferencePlatform ref(String /*?*/ ref) {
+    return MethodChannelReference(this, ref);
   }
 }

@@ -23,6 +23,7 @@ class PushIdGenerator {
 
   static final List<int> _lastRandChars = List<int>.filled(12, null);
 
+  /// Generates a new unique ID.
   static String generatePushChildName() {
     int now = DateTime.now().millisecondsSinceEpoch;
     final bool duplicateTime = (now == _lastPushTime);

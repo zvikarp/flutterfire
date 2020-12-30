@@ -2,19 +2,24 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+import 'dart:async';
+
 import 'package:firebase_database_platform_interface/firebase_database_platform_interface.dart';
 import 'package:firebase_database_platform_interface/src/method_channel/method_channel_data_snapshot.dart';
 import 'package:firebase_database_platform_interface/src/method_channel/method_channel_database.dart';
+import 'package:firebase_database_platform_interface/src/method_channel/method_channel_reference.dart';
 import 'package:firebase_database_platform_interface/src/method_channel/utils/exception.dart';
 
+/// The [MethodChannel] delegate implementation for [QueryPlatform].
 class MethodChannelQuery extends QueryPlatform {
   final FirebaseDatabasePlatform _database;
-  final ReferencePlatform _ref;
+  final String _ref;
   final List<dynamic> _modifiers;
 
+  /// Constructs a new [MethodChannelQuery] instance.
   MethodChannelQuery(this._database, this._ref, this._modifiers,
       Map<String, dynamic> parameters)
-      : super(_database, _ref, parameters);
+      : super(_database, parameters);
 
   /// Creates a new instance of [MethodChannelQuery], however overrides
   /// any existing [parameters].
@@ -34,6 +39,11 @@ class MethodChannelQuery extends QueryPlatform {
   }
 
   @override
+  ReferencePlatform get ref {
+    return MethodChannelReference(database, _ref);
+  }
+
+  @override
   Future<DataSnapshotPlatform> once() async {
     try {
       Map<String, dynamic> data = await MethodChannelFirebaseDatabase.channel
@@ -42,7 +52,7 @@ class MethodChannelQuery extends QueryPlatform {
         'modifiers': _modifiers
       });
 
-      return MethodChannelDataSnapshot(_database, _ref.path, data);
+      return MethodChannelDataSnapshot(_database, _ref, data);
     } catch (e, s) {
       throw convertPlatformException(e, s);
     }

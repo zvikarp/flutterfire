@@ -3,70 +3,132 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'package:firebase_database_platform_interface/firebase_database_platform_interface.dart';
+import 'package:firebase_database_platform_interface/src/internal/pointer.dart';
+import 'package:firebase_database_platform_interface/src/internal/push_id_generator.dart';
+import 'package:firebase_database_platform_interface/src/method_channel/method_channel_database.dart';
+import 'package:firebase_database_platform_interface/src/method_channel/method_channel_on_disconnect.dart';
 import 'package:firebase_database_platform_interface/src/method_channel/method_channel_query.dart';
+import 'package:firebase_database_platform_interface/src/method_channel/utils/exception.dart';
 
+/// The [MethodChannel] delegate implementation for [ReferencePlatform].
 class MethodChannelReference extends MethodChannelQuery
     implements ReferencePlatform {
+  final Pointer _pointer;
+
   /// Create a [MethodChannelCollectionReference] instance.
-  MethodChannelReference(
-      FirebaseDatabasePlatform database, ReferencePlatform ref)
-      : super(database, ref, [], {});
+  MethodChannelReference(FirebaseDatabasePlatform database, String ref)
+      : _pointer = Pointer(ref),
+        super(database, ref, [], {});
 
   @override
-  ReferencePlatform child(String path) {}
+  String get path => _pointer.path;
 
   @override
-  String get key => throw UnimplementedError();
+  String get key => _pointer.key;
 
   @override
-  OnDisconnectPlatform onDisconnect() {}
+  ReferencePlatform /*?*/ get parent {
+    String parentPath = _pointer.parentPath();
+
+    if (parentPath == null) {
+      return null;
+    }
+
+    return MethodChannelReference(database, parentPath);
+  }
 
   @override
-  ReferencePlatform get parent => throw UnimplementedError();
+  ReferencePlatform /*!*/ get root {
+    return MethodChannelReference(database, "/");
+  }
 
   @override
-  String get path => throw UnimplementedError();
+  ReferencePlatform child(String /*!*/ path) {
+    return MethodChannelReference(database, _pointer.child(path).path);
+  }
+
+  @override
+  OnDisconnectPlatform onDisconnect() {
+    return MethodChannelOnDisconnect(database, this);
+  }
 
   @override
   ReferencePlatform push() {
-    // TODO: implement push
-    throw UnimplementedError();
+    String id = PushIdGenerator.generatePushChildName();
+    return MethodChannelReference(database, _pointer.child(id).path);
   }
 
   @override
-  Future<void> remove() {
-    // TODO: implement remove
-    throw UnimplementedError();
+  Future<void> remove() async {
+    try {
+      await MethodChannelFirebaseDatabase.channel
+          .invokeMethod('Reference#remove', {
+        'appName': database.app.name,
+        'path': _pointer.path,
+      });
+    } catch (e, s) {
+      throw convertPlatformException(e, s);
+    }
   }
 
   @override
-  // TODO: implement root
-  ReferencePlatform get root => throw UnimplementedError();
-
-  @override
-  Future<void> set(value) {
-    // TODO: implement set
-    throw UnimplementedError();
+  Future<void> set(value) async {
+    try {
+      await MethodChannelFirebaseDatabase.channel
+          .invokeMethod('Reference#set', {
+        'appName': database.app.name,
+        'path': _pointer.path,
+        'value': value,
+      });
+    } catch (e, s) {
+      throw convertPlatformException(e, s);
+    }
   }
 
   @override
-  Future<void> setPriority(priority) {
-    // TODO: implement setPriority
-    throw UnimplementedError();
+  Future<void> setPriority(priority) async {
+    try {
+      await MethodChannelFirebaseDatabase.channel
+          .invokeMethod('Reference#setPriority', {
+        'appName': database.app.name,
+        'path': _pointer.path,
+        'priority': priority,
+      });
+    } catch (e, s) {
+      throw convertPlatformException(e, s);
+    }
   }
 
   @override
-  Future<void> setWithPriority(value, priority) {
-    // TODO: implement setWithPriority
-    throw UnimplementedError();
+  Future<void> setWithPriority(value, priority) async {
+    try {
+      await MethodChannelFirebaseDatabase.channel
+          .invokeMethod('Reference#setWithPriority', {
+        'appName': database.app.name,
+        'path': _pointer.path,
+        'value': value,
+        'priority': priority,
+      });
+    } catch (e, s) {
+      throw convertPlatformException(e, s);
+    }
   }
 
   @override
-  Future<T> transaction<T>(TransactionHandler<T> handler, Duration timeout, bool applyLocally) {}
+  Future<DataSnapshotPlatform> transaction<T>(TransactionHandler<T> handler,
+      Duration timeout, bool applyLocally) async {}
 
   @override
-  Future<void> update(value) {
-    // TODO: implement update
-    throw UnimplementedError();
+  Future<void> update(value) async {
+    try {
+      await MethodChannelFirebaseDatabase.channel
+          .invokeMethod('Reference#update', {
+        'appName': database.app.name,
+        'path': _pointer.path,
+        'value': value,
+      });
+    } catch (e, s) {
+      throw convertPlatformException(e, s);
+    }
   }
 }

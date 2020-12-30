@@ -5,7 +5,8 @@
 part of firebase_database;
 
 /// The action for a [DataSnapshot] [forEach] call.
-typedef bool /*?*/ DataSnapshotForEach(DataSnapshot /*!*/ snapshot);
+typedef bool /*?*/ DataSnapshotForEach(
+    DataSnapshot /*!*/ snapshot, int /*!*/ index);
 
 /// A DataSnapshot contains data from a Database location.
 ///
@@ -52,18 +53,26 @@ class DataSnapshot {
   /// Returns `true` if this [DataSnapshot] contains any data.
   bool /*?*/ exists() => _delegate.exists();
 
+  /// Exports the entire contents of the [DataSnapshot] as a [Map].
+  ///
+  /// This method returns the data and priority in such a way it is suitable
+  /// for backing up your data.
+  Map<String, dynamic> /*!*/ exportVal() => _delegate.exportVal();
+
   /// Enumerates the top-level children in the [DataSnapshot].
-  /// 
+  ///
   /// Because of the way objects work, the ordering of data in the object
-  /// returned by [value] is not guaranteed to match the ordering on the 
-  /// server nor the ordering of [onChildAdded] events. That is where [forEach] 
+  /// returned by [value] is not guaranteed to match the ordering on the
+  /// server nor the ordering of [onChildAdded] events. That is where [forEach]
   /// comes in handy. It guarantees the children of a [DataSnapshot] will
   /// be iterated in their query order.
-  /// 
+  ///
   /// If `true` is returned from an action iteraction, the iteration will be
   /// canceled and `true` will be returned from [forEach].
   bool forEach(DataSnapshotForEach action) {
-    // TODO: ehesp
+    return _delegate.forEach((snapshot, index) {
+      return action(DataSnapshot._(_database, _delegate), index);
+    });
   }
 
   /// Gets the priority value of the data in this [DataSnapshot].

@@ -28,14 +28,11 @@ abstract class QueryPlatform extends PlatformInterface {
   /// The [FirebaseDatabasePlatform] interface for this current query.
   final FirebaseDatabasePlatform database;
 
-  /// The [ReferencePlatform] interface for this current query.
-  final ReferencePlatform ref;
-
   /// Stores the instances query modifier filters.
   Map<String, dynamic> parameters;
 
   /// Create a [QueryPlatform] instance
-  QueryPlatform(this.database, this.ref, Map<String, dynamic> /*?*/ parameters)
+  QueryPlatform(this.database, Map<String, dynamic> /*?*/ parameters)
       : this.parameters = parameters ?? _initialParameters,
         super(token: _token);
 
@@ -51,6 +48,11 @@ abstract class QueryPlatform extends PlatformInterface {
     if (instance is! ReferencePlatform) {
       PlatformInterface.verifyToken(instance, _token);
     }
+  }
+
+  /// Returns a [ReferencePlatform] to the Query's location.
+  ReferencePlatform get ref {
+    throw UnimplementedError("ref is not implemented");
   }
 
   /// Creates a [QueryPlatform] with the specified ending point.

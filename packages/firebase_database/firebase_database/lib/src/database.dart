@@ -5,7 +5,7 @@
 part of firebase_database;
 
 /// The entry point for accessing [FirebaseDatabase].
-/// 
+///
 /// To get an instance, call [FirebaseDatabase.instance]. To use a non-default
 /// [FirebaseApp] instance, use [FirebaseDatabase.instanceFor] instead.
 class FirebaseDatabase extends FirebasePluginPlatform {
@@ -49,6 +49,9 @@ class FirebaseDatabase extends FirebasePluginPlatform {
 
     return newInstance;
   }
+
+  /// Returns the current Firebase Database server time as a [DateTime].
+  DateTime getServerTime() => _delegate.getServerTime();
 
   /// Disconnects from the server (all Database operations will be completed offline).
   ///
@@ -103,5 +106,24 @@ class FirebaseDatabase extends FirebasePluginPlatform {
     assert(host != null);
     assert(port != null);
     _delegate.useEmulator(host, port);
+  }
+
+  /// Sets the logging level for the Firebase Database SDKs.
+  ///
+  /// By default, only warnings and errors are logged natively. Setting this to
+  /// `true` will log all database events.
+  Future<void> setLoggingEnabled(bool /*!*/ enabled) =>
+      _delegate.setLoggingEnabled(enabled);
+
+  /// By default Firebase Database will use up to 10MB of disk space to cache data.
+  ///
+  /// If the cache grows beyond this size, Firebase Database will start removing
+  /// data that hasn't been recently used. If you find that your application
+  /// caches too little or too much data, call this method to change the cache size.
+  /// This method must be called before creating your first Database reference
+  /// and only needs to be called once per application.
+  Future<void> setPersistenceCacheSizeBytes(int /*!*/ bytes) {
+    assert(!bytes.isNegative);
+    return _delegate.setPersistenceCacheSizeBytes(bytes);
   }
 }
