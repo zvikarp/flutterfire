@@ -9,6 +9,7 @@ import 'package:firebase_database_platform_interface/src/method_channel/method_c
 import 'package:firebase_database_platform_interface/src/method_channel/method_channel_database.dart';
 import 'package:firebase_database_platform_interface/src/method_channel/method_channel_reference.dart';
 import 'package:firebase_database_platform_interface/src/method_channel/utils/exception.dart';
+import 'package:flutter/services.dart';
 
 /// The [MethodChannel] delegate implementation for [QueryPlatform].
 class MethodChannelQuery extends QueryPlatform {
@@ -50,20 +51,92 @@ class MethodChannelQuery extends QueryPlatform {
     return MethodChannelReference(database, _ref);
   }
 
-  @override
-  Future<DataSnapshotPlatform> once() async {
-    try {
-      Map<String, dynamic> data = await MethodChannelFirebaseDatabase.channel
-          .invokeMapMethod<String, dynamic>('Query#once', <String, dynamic>{
+  /// Creates a new unique [Stream] & [EventStream] then listens to all events.
+  ///
+  /// Events from the [EventSteam] are converted into a [DataSnapshotPlatform] instance
+  /// and then posted to the [Stream].
+  ///
+  /// It's important to remember that native SDKs listen to all "child" events
+  /// at once, so if you only require specific child events (e.g. onChildAdded)
+  /// then ensure the [Stream] is filtered on a specific event type.
+  Stream<DataSnapshotPlatform> _getQueryStream(String event) {
+    StreamController<DataSnapshotPlatform> controller;
+    StreamSubscription<dynamic> dataSnapshotStream;
+
+    controller =
+        StreamController<DataSnapshotPlatform>.broadcast(onListen: () async {
+      // Create a new native EventChannel and return the unique identifier
+      final String identifier = await MethodChannelFirebaseDatabase.channel
+          .invokeMethod<String>('Query#$event', <String, dynamic>{
         'appName': _database.app.name,
         'path': _ref,
         'modifiers': _modifiers
       });
 
-      return MethodChannelDataSnapshot(_database, _ref, data);
-    } catch (e, s) {
-      throw convertPlatformException(e, s);
-    }
+      // Get a new Dart EventChannel for the unique identifier
+      EventChannel uniqueEventChannel =
+          MethodChannelFirebaseDatabase.getQueryEventStream(identifier);
+
+      dataSnapshotStream =
+          uniqueEventChannel.receiveBroadcastStream().listen((event) {
+        // Create a new DataSnapshot and add it to the stream
+        controller.add(MethodChannelDataSnapshot(
+          _database,
+          _ref,
+          event['event'],
+          Map<String, dynamic>.from(event['snapshot']),
+        ));
+      }, onError: (e, s) {
+        controller.addError(convertPlatformException(e, s));
+      });
+    }, onCancel: () {
+      dataSnapshotStream?.cancel();
+    });
+
+    return controller.stream;
+  }
+
+  @override
+  Future<DataSnapshotPlatform> once() async {
+    return _getQueryStream('once').first;
+  }
+
+  @override
+  Stream<DataSnapshotPlatform> get onChildEvent {
+    return _getQueryStream('onChild');
+  }
+
+  @override
+  Stream<DataSnapshotPlatform> get onChildAdded {
+    return _getQueryStream('onChild').where((DataSnapshotPlatform snapshot) {
+      return snapshot.event == DataSnapshotEvent.onChildAdded;
+    });
+  }
+
+  @override
+  Stream<DataSnapshotPlatform> get onChildChanged {
+    return _getQueryStream('onChild').where((DataSnapshotPlatform snapshot) {
+      return snapshot.event == DataSnapshotEvent.onChildChanged;
+    });
+  }
+
+  @override
+  Stream<DataSnapshotPlatform> get onChildMoved {
+    return _getQueryStream('onChild').where((DataSnapshotPlatform snapshot) {
+      return snapshot.event == DataSnapshotEvent.onChildMoved;
+    });
+  }
+
+  @override
+  Stream<DataSnapshotPlatform> get onChildRemoved {
+    return _getQueryStream('onChild').where((DataSnapshotPlatform snapshot) {
+      return snapshot.event == DataSnapshotEvent.onChildRemoved;
+    });
+  }
+
+  @override
+  Stream<DataSnapshotPlatform> get onValue {
+    return _getQueryStream('onValue');
   }
 
   @override

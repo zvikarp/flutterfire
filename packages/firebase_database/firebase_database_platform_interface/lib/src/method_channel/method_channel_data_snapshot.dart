@@ -12,13 +12,15 @@ class MethodChannelDataSnapshot extends DataSnapshotPlatform {
 
   final String _ref;
 
+  final String /*?*/ _event;
+
   final Pointer _pointer;
 
   /// Constructs a new [MethodChannelDataSnapshot].
   MethodChannelDataSnapshot(
-      this._database, this._ref, Map<String, dynamic> data)
+      this._database, this._ref, this._event, Map<String, dynamic> data)
       : _pointer = Pointer(_ref),
-        super(_ref, data);
+        super(_ref, _event, data);
 
   @override
   ReferencePlatform /*!*/ get ref => MethodChannelReference(_database, _ref);
@@ -33,7 +35,7 @@ class MethodChannelDataSnapshot extends DataSnapshotPlatform {
     }
 
     return MethodChannelDataSnapshot(
-        _database, _pointer.child(path).path, <String, dynamic>{
+        _database, _pointer.child(path).path, _event, <String, dynamic>{
       'data': childData,
       'priority': null,
       'childKeys': childData is Map ? childData.keys.toList() : [],

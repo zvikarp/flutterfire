@@ -14,8 +14,11 @@ import com.google.firebase.database.Query;
 import com.google.firebase.database.ValueEventListener;
 
 import java.util.HashMap;
+import java.util.Map;
 
 import io.flutter.plugin.common.EventChannel;
+
+import static io.flutter.plugins.firebase.database.FlutterFirebaseDatabasePlugin.dataSnapshotToMap;
 
 enum QueryStreamHandlerType {
   once,
@@ -50,11 +53,19 @@ class QueryStreamHandler implements EventChannel.StreamHandler {
     }
   }
 
+  private Map<String, Object> eventToMap(@NonNull DataSnapshot snapshot, @Nullable String previousChildName, @Nullable String event) {
+    HashMap<String, Object> map = new HashMap<>();
+    map.put("event", event);
+    map.put("snapshot", dataSnapshotToMap(snapshot, previousChildName));
+
+    return map;
+  }
+
   ValueEventListener getValueEventListener(EventChannel.EventSink events) {
     return new ValueEventListener() {
       @Override
       public void onDataChange(@NonNull DataSnapshot snapshot) {
-        events.success(snapshot);
+        events.success(eventToMap(snapshot, null, null));
       }
 
       @Override
@@ -69,38 +80,22 @@ class QueryStreamHandler implements EventChannel.StreamHandler {
     return new ChildEventListener() {
       @Override
       public void onChildAdded(@NonNull DataSnapshot snapshot, @Nullable String previousChildName) {
-        HashMap<String, Object> map = new HashMap<>();
-        map.put("event", "onChildAdded");
-        map.put("snapshot", snapshot);
-        map.put("previousChildName", previousChildName);
-        events.success(map);
+        events.success(eventToMap(snapshot, previousChildName, "onChildAdded"));
       }
 
       @Override
       public void onChildChanged(@NonNull DataSnapshot snapshot, @Nullable String previousChildName) {
-        HashMap<String, Object> map = new HashMap<>();
-        map.put("event", "onChildChanged");
-        map.put("snapshot", snapshot);
-        map.put("previousChildName", previousChildName);
-        events.success(map);
+        events.success(eventToMap(snapshot, previousChildName, "onChildChanged"));
       }
 
       @Override
       public void onChildRemoved(@NonNull DataSnapshot snapshot) {
-        HashMap<String, Object> map = new HashMap<>();
-        map.put("event", "onChildRemoved");
-        map.put("snapshot", snapshot);
-        map.put("previousChildName", null);
-        events.success(map);
+        events.success(eventToMap(snapshot, null, "onChildRemoved"));
       }
 
       @Override
       public void onChildMoved(@NonNull DataSnapshot snapshot, @Nullable String previousChildName) {
-        HashMap<String, Object> map = new HashMap<>();
-        map.put("event", "onChildMoved");
-        map.put("snapshot", snapshot);
-        map.put("previousChildName", previousChildName);
-        events.success(map);
+        events.success(eventToMap(snapshot, previousChildName, "onChildMoved"));
       }
 
       @Override

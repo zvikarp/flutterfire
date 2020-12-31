@@ -27,6 +27,16 @@ class MethodChannelFirebaseDatabase extends FirebaseDatabasePlatform {
     _initialized = true;
   }
 
+  /// The [MethodChannel] used to communicate with the native plugin
+  static MethodChannel channel =
+      MethodChannel('plugins.flutter.io/firebase_database');
+
+  /// Returns an [EventChannel] for a given identifer (which was created)
+  /// on the native platform.
+  static EventChannel getQueryEventStream(String identifier) {
+    return EventChannel('plugins.flutter.io/firebase_database/$identifier');
+  }
+
   _syncServerTimeOffset() {
     const EventChannel _syncServerTimeOffsetStream = EventChannel(
         'plugins.flutter.io/firebase_database#syncServerTimeOffset');
@@ -44,10 +54,6 @@ class MethodChannelFirebaseDatabase extends FirebaseDatabasePlatform {
   FirebaseDatabasePlatform delegateFor({/*required*/ FirebaseApp app}) {
     return MethodChannelFirebaseDatabase(app: app);
   }
-
-  /// The [MethodChannel] used to communicate with the native plugin
-  static MethodChannel channel =
-      MethodChannel('plugins.flutter.io/firebase_database');
 
   @override
   FirebaseDatabasePlatform setInitialValues() {

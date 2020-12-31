@@ -13,6 +13,21 @@ import 'platform_interface_reference.dart';
 typedef bool /*?*/ DataSnapshotForEach(
     DataSnapshotPlatform /*!*/ snapshot, int /*!*/ index);
 
+/// Represents the event type of a [DataSnapshotPlatform].
+enum DataSnapshotEvent {
+  /// Indicates the snapshot was created from a child added event.
+  onChildAdded,
+
+  /// Indicates the snapshot was created from a child changed event.
+  onChildChanged,
+
+  /// Indicates the snapshot was created from a child removed event.
+  onChildRemoved,
+
+  /// Indicates the snapshot was created from a child moved event.
+  onChildMoved,
+}
+
 /// A DataSnapshot contains data from a Database location.
 ///
 /// Any time you read data from the Database, you receive the data as a [DataSnapshot].
@@ -22,11 +37,14 @@ typedef bool /*?*/ DataSnapshotForEach(
 class DataSnapshotPlatform extends PlatformInterface {
   final Pointer _pointer;
 
+  final DataSnapshotEvent _event;
+
   final Map<String, dynamic> _data;
 
   /// Constructs a new [DataSnapshotPlatform] instance.
-  DataSnapshotPlatform(String ref, this._data)
-      : _pointer = Pointer(ref),
+  DataSnapshotPlatform(String ref, String /*?*/ event, this._data)
+      : _event = _eventToEnum(event),
+        _pointer = Pointer(ref),
         super(token: _token);
 
   /// Ensures delegate implementations of a [DataSnapshot] extend this class.
@@ -36,6 +54,26 @@ class DataSnapshotPlatform extends PlatformInterface {
 
   static final Object _token = Object();
 
+  static DataSnapshotEvent /*?*/ _eventToEnum(String /*?*/ event) {
+    switch (event) {
+      case "onChildAdded":
+        return DataSnapshotEvent.onChildAdded;
+      case "onChildChanged":
+        return DataSnapshotEvent.onChildChanged;
+      case "onChildRemoved":
+        return DataSnapshotEvent.onChildRemoved;
+      case "onChildMoved":
+        return DataSnapshotEvent.onChildMoved;
+      default:
+        return null;
+    }
+  }
+
+  /// The DataSnapshot event type for child events.
+  DataSnapshotEvent get event {
+    return _event;
+  }
+
   /// The key (last part of the path) of the location of this [DataSnapshot].
   ///
   /// The last token in a Database location is considered its key. For example,
@@ -44,6 +82,14 @@ class DataSnapshotPlatform extends PlatformInterface {
   /// However, accessing the key on the root URL of a [Database] will return `null`.
   String /*?*/ get key {
     return _pointer.key;
+  }
+
+  /// The name of the previous child key by sort order, used for ordering purposes.
+  ///
+  /// This property is only exposed on child events and may be `null` if there was
+  /// no previous child.
+  String /*?*/ get previousChildName {
+    return _data['previousChildName'];
   }
 
   /// The [ReferencePlatform] for the location that generated this [DataSnapshotPlatform].
@@ -108,7 +154,7 @@ class DataSnapshotPlatform extends PlatformInterface {
   ///
   /// Note; this is not exposed to the user, instead they should call [forEach].
   List<String> getChildKeys() {
-    return _data['childKeys'] == null ? [] : List.from(_data['childKeys']);
+    return List.from(_data['childKeys']);
   }
 
   /// Returns true if the specified child path has (non-null) data.
@@ -127,16 +173,6 @@ class DataSnapshotPlatform extends PlatformInterface {
 
   /// Returns the number of child properties of this [DataSnapshotPlatform].
   int numChildren() {
-    dynamic data = _data['data'];
-
-    if (data is List) {
-      return data.length;
-    }
-
-    if (data is Map) {
-      return data.keys.length;
-    }
-
-    return 0;
+    return _data['childKeys'] ?? 0;
   }
 }

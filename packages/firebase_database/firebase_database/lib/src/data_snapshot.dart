@@ -31,6 +31,12 @@ class DataSnapshot {
   /// However, accessing the key on the root URL of a [Database] will return `null`.
   String /*?*/ get key => _delegate.key;
 
+  /// The name of the previous child key by sort order, used for ordering purposes.
+  /// 
+  /// This property is only exposed on child events and may be `null` if there was
+  /// no previous child.
+  String /*?*/ get previousChildName => _delegate.previousChildName;
+
   /// The [Reference] for the location that generated this [DataSnapshot].
   Reference get ref => Reference._(_database, _delegate.ref);
 

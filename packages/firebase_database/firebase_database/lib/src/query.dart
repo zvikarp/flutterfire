@@ -169,14 +169,23 @@ class Query {
   }
 
   /// This [Stream] will be triggered once for each initial child at this location,
-  /// and it will be triggered again every time a new child is added.
+  /// and it will be triggered again every time a new child is added, changed,
+  /// moved or removed.
   ///
-  /// The DataSnapshot passed into the callback will reflect the data for the
-  /// relevant child. For ordering purposes, it is passed a second argument which
-  /// is a string containing the key of the previous sibling child by sort order,
-  /// or `null` if it is the first child.
+  /// To only recieve snapshots for specific child events, see [onChildAdded],
+  /// [onChildRemoved], [onChildChanged] & [onChildMoved].
+  Stream<DataSnapshot> get onChildEvent {
+    return _delegate.onChildEvent.map((DataSnapshotPlatform snapshotPlatform) {
+      return DataSnapshot._(_database, snapshotPlatform);
+    });
+  }
+
+  /// This [Stream] will be triggered once for each initial child at this location,
+  /// and it will be triggered again every time a new child is added.
   Stream<DataSnapshot> get onChildAdded {
-    throw UnimplementedError("onChildAdded is not implemented");
+    return _delegate.onChildAdded.map((DataSnapshotPlatform snapshotPlatform) {
+      return DataSnapshot._(_database, snapshotPlatform);
+    });
   }
 
   /// This [Stream] will be triggered once every time a child is removed.
@@ -190,29 +199,29 @@ class Query {
   ///   - there is a query in effect which now filters out the child (because
   ///     it's sort order changed or the max limit was hit)
   Stream<DataSnapshot> get onChildRemoved {
-    throw UnimplementedError("onChildRemoved is not implemented");
+    return _delegate.onChildRemoved
+        .map((DataSnapshotPlatform snapshotPlatform) {
+      return DataSnapshot._(_database, snapshotPlatform);
+    });
   }
 
   /// This [Stream] will be triggered when the data stored in a child (or any of its descendants) changes.
   ///
   /// Note that a single event may represent multiple changes to the child.
-  /// The [DataSnapshot] passed to the callback will contain the new child contents.
-  /// For ordering purposes, the callback is also passed a second argument which is
-  /// a string containing the key of the previous sibling child by sort order,
-  /// or `null` if it is the first child.
+  /// The [DataSnapshotPlatform] passed to the callback will contain the new child contents.
   Stream<DataSnapshot> get onChildChanged {
-    throw UnimplementedError("onChildChanged is not implemented");
+    return _delegate.onChildChanged
+        .map((DataSnapshotPlatform snapshotPlatform) {
+      return DataSnapshot._(_database, snapshotPlatform);
+    });
   }
 
   /// This [Stream] will be triggered when a child's sort order changes such that
   /// its position relative to its siblings changes.
-  ///
-  /// The [DataSnapshot] passed to the callback will be for the data of the child
-  /// that has moved. It is also passed a second argument which is a string containing
-  /// the key of the previous sibling child by sort order, or `null` if it is the
-  /// first child.
   Stream<DataSnapshot> get onChildMoved {
-    throw UnimplementedError("onChildMoved is not implemented");
+    return _delegate.onChildMoved.map((DataSnapshotPlatform snapshotPlatform) {
+      return DataSnapshot._(_database, snapshotPlatform);
+    });
   }
 
   /// This [Stream] will trigger once with the initial data stored at this location,

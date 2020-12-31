@@ -93,18 +93,23 @@ abstract class QueryPlatform extends PlatformInterface {
   }
 
   /// This [Stream] will be triggered once for each initial child at this location,
-  /// and it will be triggered again every time a new child is added.
+  /// and it will be triggered again every time a new child is added, changed,
+  /// moved or removed.
   ///
-  /// The DataSnapshot passed into the callback will reflect the data for the
-  /// relevant child. For ordering purposes, it is passed a second argument which
-  /// is a string containing the key of the previous sibling child by sort order,
-  /// or `null` if it is the first child.
+  /// To only recieve snapshots for specific child events, see [onChildAdded],
+  /// [onChildRemoved], [onChildChanged] & [onChildMoved].
+  Stream<DataSnapshotPlatform> get onChildEvent {
+    throw UnimplementedError("onChildEvent is not implemented");
+  }
+
+  /// This [Stream] will be triggered once for each initial child at this location,
+  /// and it will be triggered again every time a new child is added.
   Stream<DataSnapshotPlatform> get onChildAdded {
     throw UnimplementedError("onChildAdded is not implemented");
   }
 
   /// This [Stream] will be triggered once every time a child is removed.
-  /// The [DataSnapshotPlatform] passed into the callback will be the old data for the
+  /// The [DataSnapshotPlatform] passed into the stream will be the old data for the
   /// child that was removed.
   ///
   /// A child will get removed when either:
@@ -121,20 +126,12 @@ abstract class QueryPlatform extends PlatformInterface {
   ///
   /// Note that a single event may represent multiple changes to the child.
   /// The [DataSnapshotPlatform] passed to the callback will contain the new child contents.
-  /// For ordering purposes, the callback is also passed a second argument which is
-  /// a string containing the key of the previous sibling child by sort order,
-  /// or `null` if it is the first child.
   Stream<DataSnapshotPlatform> get onChildChanged {
     throw UnimplementedError("onChildChanged is not implemented");
   }
 
   /// This [Stream] will be triggered when a child's sort order changes such that
   /// its position relative to its siblings changes.
-  ///
-  /// The [DataSnapshotPlatform] passed to the callback will be for the data of the child
-  /// that has moved. It is also passed a second argument which is a string containing
-  /// the key of the previous sibling child by sort order, or `null` if it is the
-  /// first child.
   Stream<DataSnapshotPlatform> get onChildMoved {
     throw UnimplementedError("onChildMoved is not implemented");
   }

@@ -8,6 +8,7 @@ import android.app.Activity;
 import android.util.SparseArray;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.Tasks;
@@ -21,6 +22,7 @@ import com.google.firebase.database.Query;
 import com.google.firebase.database.ValueEventListener;
 
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -58,6 +60,25 @@ public class FlutterFirebaseDatabasePlugin implements FlutterFirebasePlugin, Met
     FlutterFirebaseDatabasePlugin instance = new FlutterFirebaseDatabasePlugin();
     instance.activity = registrar.activity();
     instance.initInstance(registrar.messenger());
+  }
+
+  public static Map<String, Object> dataSnapshotToMap(@NonNull DataSnapshot snapshot, @Nullable String previousChildName) {
+    List<String> childKeys = new ArrayList<>();
+
+    if (snapshot.hasChildren()) {
+      for (DataSnapshot childSnapshot : snapshot.getChildren()) {
+        childKeys.add(childSnapshot.getKey());
+      }
+    }
+
+    HashMap<String, Object> map = new HashMap<>();
+    map.put("previousChildName", previousChildName);
+    map.put("priority", snapshot.getPriority());
+    map.put("childKeys", childKeys);
+    map.put("numChildren", snapshot.getChildrenCount());
+    map.put("data", snapshot.getValue());
+
+    return map;
   }
 
   protected static void setCachedFirebaseDatabaseInstanceForKey(
@@ -382,7 +403,7 @@ public class FlutterFirebaseDatabasePlugin implements FlutterFirebasePlugin, Met
   private Task<String> addQueryListener(Map<String, Object> arguments, QueryStreamHandlerType type) {
     return Tasks.call(cachedThreadPool, () -> {
       String identifier = UUID.randomUUID().toString().toLowerCase(Locale.US);
-      String eventChannelName = CHANNEL_NAME + "/" + type.toString() + "/" + identifier;
+      String eventChannelName = CHANNEL_NAME + "/" + identifier;
 
       EventChannel channel = new EventChannel(binaryMessenger, eventChannelName);
       EventChannel.StreamHandler handler = new QueryStreamHandler(getQuery(arguments), type);

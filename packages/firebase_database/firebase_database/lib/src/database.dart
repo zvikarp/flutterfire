@@ -113,7 +113,7 @@ class FirebaseDatabase extends FirebasePluginPlatform {
   /// By default, only warnings and errors are logged natively. Setting this to
   /// `true` will log all database events.
   Future<void> setLoggingEnabled(bool /*!*/ enabled) =>
-      _delegate.setLoggingEnabled(enabled);
+      _delegate.setLoggingEnabled(enabled ?? false);
 
   /// By default Firebase Database will use up to 10MB of disk space to cache data.
   ///
@@ -123,7 +123,10 @@ class FirebaseDatabase extends FirebasePluginPlatform {
   /// This method must be called before creating your first Database reference
   /// and only needs to be called once per application.
   Future<void> setPersistenceCacheSizeBytes(int /*!*/ bytes) {
-    assert(!bytes.isNegative);
+    assert(bytes > 1048576,
+        "The minimum number of bytes for cache is 1mb (1048576 bytes)");
+    assert(bytes < 104857600,
+        "The maximum number of bytes for cache is 100mb (104857600 bytes)");
     return _delegate.setPersistenceCacheSizeBytes(bytes);
   }
 }
