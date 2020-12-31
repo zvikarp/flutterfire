@@ -9,7 +9,7 @@ import 'package:firebase_core_platform_interface/firebase_core_platform_interfac
 import 'package:firebase_database_platform_interface/firebase_database_platform_interface.dart';
 
 export 'package:firebase_database_platform_interface/firebase_database_platform_interface.dart'
-    show ServerValue, TransactionHandler;
+    show ServerValue, TransactionHandler, DataSnapshotEvent;
 export 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart'
     show FirebaseException;
 

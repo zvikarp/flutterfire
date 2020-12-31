@@ -23,6 +23,9 @@ class DataSnapshot {
     DataSnapshotPlatform.verifyExtends(_delegate);
   }
 
+  /// The DataSnapshot event type for child events.
+  DataSnapshotEvent /*?*/ get event => _delegate.event;
+
   /// The key (last part of the path) of the location of this [DataSnapshot].
   ///
   /// The last token in a Database location is considered its key. For example,
@@ -32,7 +35,7 @@ class DataSnapshot {
   String /*?*/ get key => _delegate.key;
 
   /// The name of the previous child key by sort order, used for ordering purposes.
-  /// 
+  ///
   /// This property is only exposed on child events and may be `null` if there was
   /// no previous child.
   String /*?*/ get previousChildName => _delegate.previousChildName;
