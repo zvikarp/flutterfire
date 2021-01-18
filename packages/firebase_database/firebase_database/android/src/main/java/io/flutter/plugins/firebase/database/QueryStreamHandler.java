@@ -40,6 +40,7 @@ class QueryStreamHandler implements EventChannel.StreamHandler {
 
   @Override
   public void onListen(Object arguments, EventChannel.EventSink events) {
+    // TODO - do we need to call events.success()??
     switch (type) {
       case once:
         once(events);
@@ -70,7 +71,7 @@ class QueryStreamHandler implements EventChannel.StreamHandler {
 
       @Override
       public void onCancelled(@NonNull DatabaseError error) {
-        // TODO
+        // TODO - convert error details from DatabaseError
         events.error("firebase_database", null, null);
       }
     };
@@ -100,6 +101,7 @@ class QueryStreamHandler implements EventChannel.StreamHandler {
 
       @Override
       public void onCancelled(@NonNull DatabaseError error) {
+        // TODO - convert error details from DatabaseError
         events.error("firebase_database", null, null);
       }
     };

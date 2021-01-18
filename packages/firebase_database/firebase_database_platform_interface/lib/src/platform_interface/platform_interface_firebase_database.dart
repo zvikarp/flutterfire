@@ -25,7 +25,7 @@ abstract class FirebaseDatabasePlatform extends PlatformInterface {
   final FirebaseApp /*?*/ appInstance;
 
   /// Create an instance using [app]
-  FirebaseDatabasePlatform({this.appInstance}) : super(token: _token);
+  FirebaseDatabasePlatform({this.appInstance}) : super(token: _token);\
 
   /// Returns the [FirebaseApp] for the current instance.
   FirebaseApp /*!*/ get app {

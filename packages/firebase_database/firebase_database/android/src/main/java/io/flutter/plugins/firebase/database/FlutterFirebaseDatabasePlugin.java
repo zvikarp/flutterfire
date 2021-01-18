@@ -408,6 +408,7 @@ public class FlutterFirebaseDatabasePlugin implements FlutterFirebasePlugin, Met
       EventChannel channel = new EventChannel(binaryMessenger, eventChannelName);
       EventChannel.StreamHandler handler = new QueryStreamHandler(getQuery(arguments), type);
 
+      // TODO cleanup on reload/app restart etc
       eventChannels.put(identifier, channel);
       streamHandlers.put(identifier, handler);
 
@@ -554,6 +555,7 @@ public class FlutterFirebaseDatabasePlugin implements FlutterFirebasePlugin, Met
 
   }
 
+  // TODO ensure this is working and being called
   static class ServerTimeOffsetStreamHandler implements EventChannel.StreamHandler {
     final private DatabaseReference reference;
     private ValueEventListener listener;
@@ -573,7 +575,7 @@ public class FlutterFirebaseDatabasePlugin implements FlutterFirebasePlugin, Met
 
         @Override
         public void onCancelled(@NonNull DatabaseError error) {
-          // TODO
+          // TODO - convert error details from DatabaseError
           events.error("firebase_database", null, null);
         }
       };

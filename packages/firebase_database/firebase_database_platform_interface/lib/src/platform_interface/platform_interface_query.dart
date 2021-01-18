@@ -29,6 +29,7 @@ abstract class QueryPlatform extends PlatformInterface {
   final FirebaseDatabasePlatform database;
 
   /// Stores the instances query modifier filters.
+  // TODO(ehesp): Make private and add a getter
   Map<String, dynamic> parameters;
 
   /// Create a [QueryPlatform] instance

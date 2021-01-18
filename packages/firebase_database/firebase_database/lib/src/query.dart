@@ -320,3 +320,7 @@ _assertOrderPath(String path) {
   assert(path.isNotEmpty,
       "An order by path can not be empty. Use [orderByValue] instead.");
 }
+
+
+.endAt(..).startAt(...);
+.startAt(..).endAt(...);

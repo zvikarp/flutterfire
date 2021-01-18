@@ -116,7 +116,9 @@ class MethodChannelReference extends MethodChannelQuery
 
   @override
   Future<DataSnapshotPlatform> transaction<T>(TransactionHandler<T> handler,
-      Duration timeout, bool applyLocally) async {}
+      Duration timeout, bool applyLocally) async {
+        // TODO(ehesp): Implemement me
+      }
 
   @override
   Future<void> update(value) async {

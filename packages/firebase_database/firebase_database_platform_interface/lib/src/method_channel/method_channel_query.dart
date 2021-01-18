@@ -15,6 +15,7 @@ import 'package:flutter/services.dart';
 class MethodChannelQuery extends QueryPlatform {
   final FirebaseDatabasePlatform _database;
   final String _ref;
+  // TODO(ehesp): the isEqual / == comparison needs to iterate this - is there a better way to do it in Dart?
   final List<dynamic> _modifiers;
 
   /// Constructs a new [MethodChannelQuery] instance.
@@ -59,6 +60,7 @@ class MethodChannelQuery extends QueryPlatform {
   /// It's important to remember that native SDKs listen to all "child" events
   /// at once, so if you only require specific child events (e.g. onChildAdded)
   /// then ensure the [Stream] is filtered on a specific event type.
+  // TODO(ehesp): Double check its setup correctly once doing a `.first`
   Stream<DataSnapshotPlatform> _getQueryStream(String event) {
     StreamController<DataSnapshotPlatform> controller;
     StreamSubscription<dynamic> dataSnapshotStream;
@@ -100,6 +102,8 @@ class MethodChannelQuery extends QueryPlatform {
   Future<DataSnapshotPlatform> once() async {
     return _getQueryStream('once').first;
   }
+
+  // TODO(ehesp): These should be methods since its a new Stream each time?
 
   @override
   Stream<DataSnapshotPlatform> get onChildEvent {
