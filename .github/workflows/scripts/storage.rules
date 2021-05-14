@@ -1,0 +1,15 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /list/{allPaths=**} {
+    	allow read;
+    }
+    match /no_access.png {
+      allow read, write;
+    }
+    match /writeOnly.jpeg {
+      allow write: if true;
+      allow read: if false;
+    }
+  }
+}
