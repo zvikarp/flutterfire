@@ -9,3 +9,5 @@ const TWITTER_API_SECRET_KEY =
 const TWITTER_REDIRECT_URI = 'ffire://';
 
 const FACEBOOK_CLIENT_ID = '128693022464535';
+
+const APPLE_CLIENT_ID = 'io.flutter.plugins.flutterfireui.appleauth';

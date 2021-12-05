@@ -48,9 +48,16 @@ class AppleSignInButton extends OAuthProviderButtonWidget {
   @override
   final VoidCallback? onTap;
 
+  final String? clientId;
+
+  final String? redirectUri;
+
   @override
   OAuthProviderConfiguration get providerConfig {
-    return const AppleProviderConfiguration();
+    return AppleProviderConfiguration(
+      clientId: clientId,
+      redirectUri: redirectUri,
+    );
   }
 
   @override
@@ -62,6 +69,8 @@ class AppleSignInButton extends OAuthProviderButtonWidget {
     this.auth,
     this.size,
     this.onTap,
+    this.clientId,
+    this.redirectUri,
   }) : super(key: key);
 }
 
@@ -81,9 +90,16 @@ class AppleSignInIconButton extends OAuthProviderIconButtonWidget {
   @override
   final VoidCallback? onTap;
 
+  final String? clientId;
+
+  final String? redirectUri;
+
   @override
   OAuthProviderConfiguration get providerConfig {
-    return const AppleProviderConfiguration();
+    return AppleProviderConfiguration(
+      clientId: clientId,
+      redirectUri: redirectUri,
+    );
   }
 
   @override
@@ -95,5 +111,7 @@ class AppleSignInIconButton extends OAuthProviderIconButtonWidget {
     this.auth,
     this.size,
     this.onTap,
+    this.clientId,
+    this.redirectUri,
   }) : super(key: key);
 }

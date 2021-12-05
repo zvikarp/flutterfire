@@ -18,7 +18,7 @@ class AuthResolver extends StatelessWidget {
       EmailProviderConfiguration(),
       // PhoneProviderConfiguration(),
       GoogleProviderConfiguration(clientId: GOOGLE_CLIENT_ID),
-      // AppleProviderConfiguration(),
+      AppleProviderConfiguration(clientId: APPLE_CLIENT_ID),
       // FacebookProviderConfiguration(clientId: FACEBOOK_CLIENT_ID),
       // TwitterProviderConfiguration(
       //   apiKey: TWITTER_API_KEY,

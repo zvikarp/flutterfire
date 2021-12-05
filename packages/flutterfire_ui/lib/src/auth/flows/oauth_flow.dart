@@ -34,7 +34,11 @@ class OAuthFlow extends AuthFlow implements OAuthController {
       late OAuthCredential credential;
 
       if (kIsWeb) {
-        return await _signInWeb(provider);
+        if (provider.firebaseAuthProvider != null) {
+          return await _signInWeb(provider);
+        } else {
+          credential = await provider.signIn();
+        }
       } else if (platform == TargetPlatform.macOS) {
         credential = await provider.desktopSignIn();
       } else {

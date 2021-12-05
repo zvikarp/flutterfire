@@ -32,10 +32,24 @@ String sha256ofString(String input) {
 }
 
 class AppleProviderImpl extends OAuthProvider {
+  final String? clientId;
+  final String redirectUri;
+
+  AppleProviderImpl({this.clientId, required this.redirectUri});
+
   @override
   Future<fba.OAuthCredential> signIn() async {
     final rawNonce = generateNonce();
     final nonce = sha256ofString(rawNonce);
+
+    WebAuthenticationOptions? webAuthOptions;
+
+    if (clientId != null) {
+      webAuthOptions = WebAuthenticationOptions(
+        clientId: clientId!,
+        redirectUri: Uri.parse(redirectUri),
+      );
+    }
 
     // Request credential for the currently signed in Apple account.
     final appleCredential = await SignInWithApple.getAppleIDCredential(
@@ -44,6 +58,7 @@ class AppleProviderImpl extends OAuthProvider {
         AppleIDAuthorizationScopes.fullName,
       ],
       nonce: nonce,
+      webAuthenticationOptions: webAuthOptions,
     );
 
     // Create an `OAuthCredential` from the credential returned by Apple.
@@ -73,11 +88,20 @@ class AppleProviderImpl extends OAuthProvider {
 }
 
 class AppleProviderConfiguration extends OAuthProviderConfiguration {
-  const AppleProviderConfiguration();
+  final String? clientId;
+  final String? redirectUri;
+
+  const AppleProviderConfiguration({
+    this.clientId,
+    this.redirectUri,
+  });
 
   @override
   OAuthProvider createProvider() {
-    return AppleProviderImpl();
+    return AppleProviderImpl(
+      clientId: clientId,
+      redirectUri: redirectUri ?? defaultRedirectUri,
+    );
   }
 
   @override
@@ -93,7 +117,6 @@ class AppleProviderConfiguration extends OAuthProviderConfiguration {
 
   @override
   bool isSupportedPlatform(TargetPlatform platform) {
-    return !kIsWeb &&
-        (platform == TargetPlatform.iOS || platform == TargetPlatform.macOS);
+    return platform == TargetPlatform.iOS || platform == TargetPlatform.macOS;
   }
 }
