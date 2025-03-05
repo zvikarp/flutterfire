@@ -4,46 +4,96 @@
 
 // ignore_for_file: avoid_unused_constructor_parameters, non_constant_identifier_names, public_member_api_docs
 
-@JS('firebase.remoteConfig')
+@JS('firebase_remote_config')
 library firebase.remote_config_interop;
 
-import 'package:js/js.dart';
+import 'dart:js_interop';
+
 import 'package:firebase_core_web/firebase_core_web_interop.dart';
 
+@JS()
+@staticInterop
+external RemoteConfigJsImpl getRemoteConfig([AppJsImpl? app]);
+
+@JS()
+@staticInterop
+external JSPromise /* bool */ activate(RemoteConfigJsImpl remoteConfig);
+
+@JS()
+@staticInterop
+external JSPromise ensureInitialized(RemoteConfigJsImpl remoteConfig);
+
+@JS()
+@staticInterop
+external JSPromise /* bool */ fetchAndActivate(RemoteConfigJsImpl remoteConfig);
+
+@JS()
+@staticInterop
+external JSPromise fetchConfig(RemoteConfigJsImpl remoteConfig);
+
+@JS()
+@staticInterop
+external JSAny getAll(RemoteConfigJsImpl remoteConfig);
+
+@JS()
+@staticInterop
+external JSBoolean getBoolean(RemoteConfigJsImpl remoteConfig, JSString key);
+
+@JS()
+@staticInterop
+external JSNumber getNumber(RemoteConfigJsImpl remoteConfig, JSString key);
+
+@JS()
+@staticInterop
+external JSString getString(RemoteConfigJsImpl remoteConfig, JSString key);
+
+@JS()
+@staticInterop
+external ValueJsImpl getValue(RemoteConfigJsImpl remoteConfig, JSString key);
+
+// TODO - api to be implemented
+@JS()
+@staticInterop
+external JSPromise isSupported();
+
+@JS()
+@staticInterop
+external void setLogLevel(RemoteConfigJsImpl remoteConfig, JSString logLevel);
+
 @JS('RemoteConfig')
-abstract class RemoteConfigJsImpl {
+@staticInterop
+abstract class RemoteConfigJsImpl {}
+
+extension RemoteConfigJsImplExtension on RemoteConfigJsImpl {
+  external AppJsImpl get app;
   external SettingsJsImpl get settings;
   external set settings(SettingsJsImpl value);
-  external Object get defaultConfig;
-  external set defaultConfig(Object value);
-  external int get fetchTimeMillis;
-  external String get lastFetchStatus;
-  external PromiseJsImpl<bool> activate();
-  external PromiseJsImpl<void> ensureInitialized();
-  external PromiseJsImpl<void> fetch();
-  external PromiseJsImpl<bool> fetchAndActivate();
-  external dynamic getAll();
-  external bool getBoolean(String key);
-  external num getNumber(String key);
-  external String getString(String key);
-  external ValueJsImpl getValue(String key);
-  external void setLogLevel(String logLevel);
+  external JSObject get defaultConfig;
+  external set defaultConfig(JSObject value);
+  external JSNumber get fetchTimeMillis;
+  external JSString get lastFetchStatus;
 }
 
 @JS()
+@staticInterop
 @anonymous
-abstract class ValueJsImpl {
-  external bool asBoolean();
-  external num asNumber();
-  external String asString();
-  external String getSource();
+abstract class ValueJsImpl {}
+
+extension ValueJsImplExtension on ValueJsImpl {
+  external JSBoolean asBoolean();
+  external JSNumber asNumber();
+  external JSString asString();
+  external JSString getSource();
 }
 
 @JS()
+@staticInterop
 @anonymous
-abstract class SettingsJsImpl {
-  external int get minimumFetchIntervalMillis;
-  external set minimumFetchIntervalMillis(int value);
-  external int get fetchTimeoutMillis;
-  external set fetchTimeoutMillis(int value);
+abstract class SettingsJsImpl {}
+
+extension SettingsJsImplExtension on SettingsJsImpl {
+  external JSNumber get minimumFetchIntervalMillis;
+  external set minimumFetchIntervalMillis(JSNumber value);
+  external JSNumber get fetchTimeoutMillis;
+  external set fetchTimeoutMillis(JSNumber value);
 }

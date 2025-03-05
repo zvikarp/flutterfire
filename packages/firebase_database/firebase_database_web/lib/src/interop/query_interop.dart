@@ -1,60 +1,17 @@
-part of firebase.database_interop;
+// Copyright 2022, the Chromium project authors.  Please see the AUTHORS file
+// for details. All rights reserved. Use of this source code is governed by a
+// BSD-style license that can be found in the LICENSE file.
+
+part of 'database_interop.dart';
 
 @JS('Query')
-abstract class QueryJsImpl {
+@staticInterop
+abstract class QueryJsImpl {}
+
+extension ExtensionQueryJsImpl on QueryJsImpl {
   external ReferenceJsImpl get ref;
 
-  external set ref(ReferenceJsImpl r);
+  external JSBoolean isEqual(QueryJsImpl other);
 
-  external PromiseJsImpl<DataSnapshotJsImpl> get();
-
-  external QueryJsImpl startAt(value, [String key]);
-
-  external QueryJsImpl startAfter(value, [String key]);
-
-  external QueryJsImpl endAt(value, [String key]);
-
-  external QueryJsImpl endBefore(value, [String key]);
-
-  external QueryJsImpl equalTo(value, [String key]);
-
-  external bool isEqual(QueryJsImpl other);
-
-  external QueryJsImpl limitToFirst(int limit);
-
-  external QueryJsImpl limitToLast(int limit);
-
-  external void off([
-    String eventType,
-    dynamic Function(DataSnapshotJsImpl, [String]) callback,
-    context,
-  ]);
-
-  external void Function() on(
-    String eventType,
-    dynamic Function(DataSnapshotJsImpl, [String]) callback, [
-    cancelCallbackOrContext,
-    context,
-  ]);
-
-  external PromiseJsImpl<dynamic> once(
-    String eventType, [
-    dynamic Function(DataSnapshotJsImpl, [String]) callback,
-    successCallback,
-    failureCallbackOrContext,
-    context,
-  ]);
-
-  external QueryJsImpl orderByChild(String path);
-
-  external QueryJsImpl orderByKey();
-
-  external QueryJsImpl orderByPriority();
-
-  external QueryJsImpl orderByValue();
-
-  external Object toJSON();
-
-  @override
-  external String toString();
+  external JSObject toJSON();
 }

@@ -2,20 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 @TestOn('chrome')
-
+import 'package:firebase_app_check_platform_interface/firebase_app_check_platform_interface.dart';
 import 'package:firebase_app_check_web/firebase_app_check_web.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 
-class MockFirebaseAppCheck extends Mock implements FirebaseAppCheckWeb {}
+@GenerateNiceMocks([MockSpec<FirebaseAppCheckWeb>()])
+import 'firebase_app_check_web_test.mocks.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   group('$FirebaseAppCheckWeb', () {
-    late MockFirebaseAppCheck appCheck;
+    late MockFirebaseAppCheckWeb appCheck;
 
     setUp(() {
-      appCheck = MockFirebaseAppCheck();
+      appCheck = MockFirebaseAppCheckWeb();
     });
 
     test('instance', () {
@@ -30,9 +32,29 @@ void main() {
       verifyNoMoreInteractions(appCheck);
     });
 
-    test('activate', () async {
-      await appCheck.activate(webRecaptchaSiteKey: 'key');
-      verify(appCheck.activate(webRecaptchaSiteKey: 'key'));
+    test('activate with ReCaptchaV3Provider', () async {
+      final provider = ReCaptchaV3Provider('key');
+      await appCheck.activate(
+        webProvider: provider,
+      );
+      verify(
+        appCheck.activate(
+          webProvider: provider,
+        ),
+      );
+      verifyNoMoreInteractions(appCheck);
+    });
+
+    test('activate with ReCaptchaEnterpriseProvider', () async {
+      final provider = ReCaptchaEnterpriseProvider('key');
+      await appCheck.activate(
+        webProvider: provider,
+      );
+      verify(
+        appCheck.activate(
+          webProvider: provider,
+        ),
+      );
       verifyNoMoreInteractions(appCheck);
     });
 

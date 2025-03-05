@@ -8,6 +8,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../mock.dart';
+import 'platform_interface_user_credential_test.dart';
 
 void main() {
   setupFirebaseAuthMocks();
@@ -26,39 +27,43 @@ void main() {
       DateTime.now().subtract(const Duration(days: 2)).millisecondsSinceEpoch;
   final int kMockLastSignInTimestamp =
       DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch;
-  final List kMockInitialProviderData = [
-    <String, String>{
+  final List<Map<String, Object>> kMockInitialProviderData = [
+    <String, Object>{
       'providerId': kMockProviderId,
       'uid': kMockUid,
       'displayName': kMockDisplayName,
-      'photoURL': kMockPhotoURL,
+      'photoUrl': kMockPhotoURL,
       'email': kMockEmail,
       'phoneNumber': kMockPhoneNumber,
+      'isEmailVerified': false,
+      'isAnonymous': true
     },
   ];
   group('$UserPlatform()', () {
-    Map<String, dynamic> kMockUser;
+    PigeonUserDetails kMockUser;
     setUpAll(() async {
       await Firebase.initializeApp();
       auth = FirebaseAuthPlatform.instance;
 
-      kMockUser = <String, dynamic>{
-        'uid': kMockUid,
-        'isAnonymous': true,
-        'email': kMockEmail,
-        'displayName': kMockDisplayName,
-        'emailVerified': false,
-        'phoneNumber': kMockPhoneNumber,
-        'metadata': <String, int>{
-          'creationTime': kMockCreationTimestamp,
-          'lastSignInTime': kMockLastSignInTimestamp,
-        },
-        'photoURL': kMockPhotoURL,
-        'providerData': kMockInitialProviderData,
-        'refreshToken': kMockRefreshToken,
-        'tenantId': kMockTenantId,
-      };
-      userPlatform = TestUserPlatform(auth, kMockUser);
+      kMockUser = PigeonUserDetails(
+        userInfo: PigeonUserInfo(
+          uid: kMockUid,
+          isAnonymous: true,
+          email: kMockEmail,
+          displayName: kMockDisplayName,
+          isEmailVerified: false,
+          phoneNumber: kMockPhoneNumber,
+          photoUrl: kMockPhotoURL,
+          refreshToken: kMockRefreshToken,
+          tenantId: kMockTenantId,
+          lastSignInTimestamp: kMockLastSignInTimestamp,
+          creationTimestamp: kMockCreationTimestamp,
+        ),
+        providerData: kMockInitialProviderData,
+      );
+
+      userPlatform =
+          TestUserPlatform(auth, TestMultiFactorPlatform(auth), kMockUser);
     });
 
     group('Constructor', () {
@@ -67,10 +72,10 @@ void main() {
       });
     });
 
-    group('verifyExtends()', () {
+    group('verify()', () {
       test('calls successfully', () {
         try {
-          UserPlatform.verifyExtends(userPlatform);
+          UserPlatform.verify(userPlatform);
           return;
         } catch (_) {
           fail('thrown an unexpected exception');
@@ -90,8 +95,8 @@ void main() {
     test('UserPlatform.email', () {
       expect(userPlatform.email, kMockEmail);
     });
-    test('UserPlatform.emailVerified', () {
-      expect(userPlatform.emailVerified, false);
+    test('UserPlatform.isEmailVerified', () {
+      expect(userPlatform.isEmailVerified, false);
     });
     test('UserPlatform.isAnonymous', () {
       expect(userPlatform.isAnonymous, true);
@@ -283,6 +288,7 @@ void main() {
 }
 
 class TestUserPlatform extends UserPlatform {
-  TestUserPlatform(FirebaseAuthPlatform auth, Map<String, dynamic> data)
-      : super(auth, data);
+  TestUserPlatform(FirebaseAuthPlatform auth, MultiFactorPlatform multiFactor,
+      PigeonUserDetails data)
+      : super(auth, multiFactor, data);
 }

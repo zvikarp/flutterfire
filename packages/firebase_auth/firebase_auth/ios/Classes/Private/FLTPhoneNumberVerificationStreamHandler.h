@@ -11,6 +11,7 @@
 #endif
 
 #import <Firebase/Firebase.h>
+#import "firebase_auth_messages.g.h"
 
 #import <Foundation/Foundation.h>
 
@@ -18,7 +19,14 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface FLTPhoneNumberVerificationStreamHandler : NSObject <FlutterStreamHandler>
 
+#if TARGET_OS_OSX
 - (instancetype)initWithAuth:(FIRAuth *)auth arguments:(NSDictionary *)arguments;
+#else
+- (instancetype)initWithAuth:(FIRAuth *)auth
+                     request:(PigeonVerifyPhoneNumberRequest *)request
+                     session:(FIRMultiFactorSession *)session
+                  factorInfo:(FIRPhoneMultiFactorInfo *)factorInfo;
+#endif
 
 @end
 

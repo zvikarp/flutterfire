@@ -9,24 +9,36 @@
 #import "Private/FLTAuthStateChannelStreamHandler.h"
 #import "Private/FLTIdTokenChannelStreamHandler.h"
 #import "Private/FLTPhoneNumberVerificationStreamHandler.h"
+#import "Private/PigeonParser.h"
 
+#import "Public/CustomPigeonHeader.h"
 #import "Public/FLTFirebaseAuthPlugin.h"
+@import CommonCrypto;
+#import <AuthenticationServices/AuthenticationServices.h>
+#import <firebase_core/FLTFirebaseCorePlugin.h>
 
 NSString *const kFLTFirebaseAuthChannelName = @"plugins.flutter.io/firebase_auth";
+
+// Argument Keys
+NSString *const kAppName = @"appName";
 
 // Provider type keys.
 NSString *const kSignInMethodPassword = @"password";
 NSString *const kSignInMethodEmailLink = @"emailLink";
 NSString *const kSignInMethodFacebook = @"facebook.com";
 NSString *const kSignInMethodGoogle = @"google.com";
+NSString *const kSignInMethodGameCenter = @"gc.apple.com";
 NSString *const kSignInMethodTwitter = @"twitter.com";
 NSString *const kSignInMethodGithub = @"github.com";
+NSString *const kSignInMethodApple = @"apple.com";
 NSString *const kSignInMethodPhone = @"phone";
 NSString *const kSignInMethodOAuth = @"oauth";
 
 // Credential argument keys.
 NSString *const kArgumentCredential = @"credential";
 NSString *const kArgumentProviderId = @"providerId";
+NSString *const kArgumentProviderScope = @"scopes";
+NSString *const kArgumentProviderCustomParameters = @"customParameters";
 NSString *const kArgumentSignInMethod = @"signInMethod";
 NSString *const kArgumentSecret = @"secret";
 NSString *const kArgumentIdToken = @"idToken";
@@ -40,25 +52,64 @@ NSString *const kArgumentToken = @"token";
 NSString *const kArgumentVerificationId = @"verificationId";
 NSString *const kArgumentSmsCode = @"smsCode";
 NSString *const kArgumentActionCodeSettings = @"actionCodeSettings";
+NSString *const kArgumentFamilyName = @"familyName";
+NSString *const kArgumentGivenName = @"givenName";
+NSString *const kArgumentMiddleName = @"middleName";
+NSString *const kArgumentNickname = @"nickname";
+NSString *const kArgumentNamePrefix = @"namePrefix";
+NSString *const kArgumentNameSuffix = @"nameSuffix";
+
+// MultiFactor
+NSString *const kArgumentMultiFactorHints = @"multiFactorHints";
+NSString *const kArgumentMultiFactorSessionId = @"multiFactorSessionId";
+NSString *const kArgumentMultiFactorResolverId = @"multiFactorResolverId";
+NSString *const kArgumentMultiFactorInfo = @"multiFactorInfo";
 
 // Manual error codes & messages.
 NSString *const kErrCodeNoCurrentUser = @"no-current-user";
 NSString *const kErrMsgNoCurrentUser = @"No user currently signed in.";
 NSString *const kErrCodeInvalidCredential = @"invalid-credential";
 NSString *const kErrMsgInvalidCredential =
-    @"The supplied auth credential is malformed, has expired or is not currently supported.";
+    @"The supplied auth credential is malformed, has expired or is not "
+    @"currently supported.";
+
+// Used for caching credentials between Method Channel method calls.
+static NSMutableDictionary<NSNumber *, FIRAuthCredential *> *credentialsMap;
 
 @interface FLTFirebaseAuthPlugin ()
 @property(nonatomic, retain) NSObject<FlutterBinaryMessenger> *messenger;
+@property(strong, nonatomic) FIROAuthProvider *authProvider;
+// Used to keep the user who wants to link with Apple Sign In
+@property(strong, nonatomic) FIRUser *linkWithAppleUser;
+@property(strong, nonatomic) FIRAuth *signInWithAppleAuth;
+@property BOOL isReauthenticatingWithApple;
+@property(strong, nonatomic) NSString *currentNonce;
+@property(strong, nonatomic) void (^appleCompletion)
+    (PigeonUserCredential *_Nullable, FlutterError *_Nullable);
+@property(strong, nonatomic) AuthPigeonFirebaseApp *appleArguments;
+
 @end
 
 @implementation FLTFirebaseAuthPlugin {
-  // Used for caching credentials between Method Channel method calls.
-  NSMutableDictionary<NSNumber *, FIRAuthCredential *> *_credentials;
+#if TARGET_OS_IPHONE
+  // Map an id to a MultiFactorSession object.
+  NSMutableDictionary<NSString *, FIRMultiFactorSession *> *_multiFactorSessionMap;
+
+  // Map an id to a MultiFactorResolver object.
+  NSMutableDictionary<NSString *, FIRMultiFactorResolver *> *_multiFactorResolverMap;
+
+  // Map an id to a MultiFactorResolver object.
+  NSMutableDictionary<NSString *, FIRMultiFactorAssertion *> *_multiFactorAssertionMap;
+
+  // Map an id to a MultiFactorResolver object.
+  NSMutableDictionary<NSString *, FIRTOTPSecret *> *_multiFactorTotpSecretMap;
+
+#endif
 
   NSObject<FlutterBinaryMessenger> *_binaryMessenger;
   NSMutableDictionary<NSString *, FlutterEventChannel *> *_eventChannels;
   NSMutableDictionary<NSString *, NSObject<FlutterStreamHandler> *> *_streamHandlers;
+  NSData *_apnsToken;
 }
 
 #pragma mark - FlutterPlugin
@@ -67,10 +118,18 @@ NSString *const kErrMsgInvalidCredential =
   self = [super init];
   if (self) {
     [[FLTFirebasePluginRegistry sharedInstance] registerFirebasePlugin:self];
-    _credentials = [NSMutableDictionary<NSNumber *, FIRAuthCredential *> dictionary];
+    credentialsMap = [NSMutableDictionary<NSNumber *, FIRAuthCredential *> dictionary];
     _binaryMessenger = messenger;
     _eventChannels = [NSMutableDictionary dictionary];
     _streamHandlers = [NSMutableDictionary dictionary];
+
+#if TARGET_OS_IPHONE
+    _multiFactorSessionMap = [NSMutableDictionary dictionary];
+    _multiFactorResolverMap = [NSMutableDictionary dictionary];
+    _multiFactorAssertionMap = [NSMutableDictionary dictionary];
+    _multiFactorTotpSecretMap = [NSMutableDictionary dictionary];
+
+#endif
   }
   return self;
 }
@@ -84,18 +143,102 @@ NSString *const kErrMsgInvalidCredential =
   [registrar addMethodCallDelegate:instance channel:channel];
 
 #if TARGET_OS_OSX
-  // TODO(Salakar): Publish does not exist on MacOS version of FlutterPluginRegistrar.
+  // TODO(Salakar): Publish does not exist on MacOS version of
+  // FlutterPluginRegistrar.
   // TODO(Salakar): addApplicationDelegate does not exist on MacOS version of
   // FlutterPluginRegistrar. (https://github.com/flutter/flutter/issues/41471)
+  SetUpFirebaseAuthHostApi(registrar.messenger, instance);
+  SetUpFirebaseAuthUserHostApi(registrar.messenger, instance);
 #else
   [registrar publish:instance];
   [registrar addApplicationDelegate:instance];
+  SetUpFirebaseAuthHostApi(registrar.messenger, instance);
+  SetUpFirebaseAuthUserHostApi(registrar.messenger, instance);
+  SetUpMultiFactorUserHostApi(registrar.messenger, instance);
+  SetUpMultiFactoResolverHostApi(registrar.messenger, instance);
+  SetUpMultiFactorTotpHostApi(registrar.messenger, instance);
+  SetUpMultiFactorTotpSecretHostApi(registrar.messenger, instance);
 #endif
+}
+
++ (FlutterError *)convertToFlutterError:(NSError *)error {
+  NSString *code = @"unknown";
+  NSString *message = @"An unknown error has occurred.";
+
+  if (error == nil) {
+    return [FlutterError errorWithCode:code message:message details:@{}];
+  }
+
+  // code
+  if ([error userInfo][FIRAuthErrorUserInfoNameKey] != nil) {
+    // See [FIRAuthErrorCodeString] for list of codes.
+    // Codes are in the format "ERROR_SOME_NAME", converting below to the format
+    // required in Dart. ERROR_SOME_NAME -> SOME_NAME
+    NSString *firebaseErrorCode = [error userInfo][FIRAuthErrorUserInfoNameKey];
+    code = [firebaseErrorCode stringByReplacingOccurrencesOfString:@"ERROR_" withString:@""];
+    // SOME_NAME -> SOME-NAME
+    code = [code stringByReplacingOccurrencesOfString:@"_" withString:@"-"];
+    // SOME-NAME -> some-name
+    code = [code lowercaseString];
+  }
+
+  // message
+  if ([error userInfo][NSLocalizedDescriptionKey] != nil) {
+    message = [error userInfo][NSLocalizedDescriptionKey];
+  }
+
+  NSMutableDictionary *additionalData = [NSMutableDictionary dictionary];
+  // additionalData.email
+  if ([error userInfo][FIRAuthErrorUserInfoEmailKey] != nil) {
+    additionalData[kArgumentEmail] = [error userInfo][FIRAuthErrorUserInfoEmailKey];
+  }
+  // We want to store the credential if present for future sign in if the exception contains a
+  // credential, we pass a token back to Flutter to allow retreival of the credential.
+  NSNumber *token = [FLTFirebaseAuthPlugin storeAuthCredentialIfPresent:error];
+
+  // additionalData.authCredential
+  if ([error userInfo][FIRAuthErrorUserInfoUpdatedCredentialKey] != nil) {
+    FIRAuthCredential *authCredential = [error userInfo][FIRAuthErrorUserInfoUpdatedCredentialKey];
+    additionalData[@"authCredential"] = [PigeonParser getPigeonAuthCredential:authCredential
+                                                                        token:token];
+  }
+
+  // Manual message overrides to ensure messages/codes matches other platforms.
+  if ([message isEqual:@"The password must be 6 characters long or more."]) {
+    message = @"Password should be at least 6 characters";
+  }
+
+  return [FlutterError errorWithCode:code message:message details:additionalData];
+}
+
++ (id)getNSDictionaryFromAuthCredential:(FIRAuthCredential *)authCredential {
+  if (authCredential == nil) {
+    return [NSNull null];
+  }
+
+  NSString *accessToken = nil;
+  if ([authCredential isKindOfClass:[FIROAuthCredential class]]) {
+    if (((FIROAuthCredential *)authCredential).accessToken != nil) {
+      accessToken = ((FIROAuthCredential *)authCredential).accessToken;
+    } else if (((FIROAuthCredential *)authCredential).IDToken != nil) {
+      // For Sign In With Apple, the token is stored in IDToken
+      accessToken = ((FIROAuthCredential *)authCredential).IDToken;
+    }
+  }
+
+  return @{
+    kArgumentProviderId : authCredential.provider,
+    // Note: "signInMethod" does not exist on iOS SDK, so using provider
+    // instead.
+    kArgumentSignInMethod : authCredential.provider,
+    kArgumentToken : @([authCredential hash]),
+    kArgumentAccessToken : accessToken ?: [NSNull null],
+  };
 }
 
 - (void)cleanupWithCompletion:(void (^)(void))completion {
   // Cleanup credentials.
-  [_credentials removeAllObjects];
+  [credentialsMap removeAllObjects];
 
   for (FlutterEventChannel *channel in self->_eventChannels.allValues) {
     [channel setStreamHandler:nil];
@@ -111,118 +254,6 @@ NSString *const kErrMsgInvalidCredential =
 
 - (void)detachFromEngineForRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar {
   [self cleanupWithCompletion:nil];
-}
-
-- (void)handleMethodCall:(FlutterMethodCall *)call result:(FlutterResult)flutterResult {
-  FLTFirebaseMethodCallErrorBlock errorBlock =
-      ^(NSString *_Nullable code, NSString *_Nullable message, NSDictionary *_Nullable details,
-        NSError *_Nullable error) {
-        if (code == nil) {
-          NSDictionary *errorDetails = [FLTFirebaseAuthPlugin getNSDictionaryFromNSError:error];
-          [self storeAuthCredentialIfPresent:error];
-          code = errorDetails[kArgumentCode];
-          message = errorDetails[@"message"];
-          details = errorDetails;
-        } else {
-          details = @{
-            kArgumentCode : code,
-            @"message" : message,
-            @"additionalData" : @{},
-          };
-        }
-
-        if ([@"unknown" isEqualToString:code]) {
-          NSLog(@"FLTFirebaseAuth: An error occurred while calling method %@, errorOrNil => %@",
-                call.method, [error userInfo]);
-        }
-
-        flutterResult([FLTFirebasePlugin createFlutterErrorFromCode:code
-                                                            message:message
-                                                    optionalDetails:details
-                                                 andOptionalNSError:error]);
-      };
-
-  FLTFirebaseMethodCallSuccessBlock successBlock = ^(id _Nullable result) {
-    if ([result isKindOfClass:[FIRAuthDataResult class]]) {
-      flutterResult([self getNSDictionaryFromAuthResult:result]);
-    } else if ([result isKindOfClass:[FIRUser class]]) {
-      flutterResult([FLTFirebaseAuthPlugin getNSDictionaryFromUser:result]);
-    } else {
-      flutterResult(result);
-    }
-  };
-
-  FLTFirebaseMethodCallResult *methodCallResult =
-      [FLTFirebaseMethodCallResult createWithSuccess:successBlock andErrorBlock:errorBlock];
-
-  if ([@"Auth#registerIdTokenListener" isEqualToString:call.method]) {
-    [self registerIdTokenListener:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#registerAuthStateListener" isEqualToString:call.method]) {
-    [self registerAuthStateListener:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#applyActionCode" isEqualToString:call.method]) {
-    [self applyActionCode:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#checkActionCode" isEqualToString:call.method]) {
-    [self checkActionCode:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#confirmPasswordReset" isEqualToString:call.method]) {
-    [self confirmPasswordReset:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#createUserWithEmailAndPassword" isEqualToString:call.method]) {
-    [self createUserWithEmailAndPassword:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#fetchSignInMethodsForEmail" isEqualToString:call.method]) {
-    [self fetchSignInMethodsForEmail:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#sendPasswordResetEmail" isEqualToString:call.method]) {
-    [self sendPasswordResetEmail:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#sendSignInLinkToEmail" isEqualToString:call.method]) {
-    [self sendSignInLinkToEmail:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#signInWithCredential" isEqualToString:call.method]) {
-    [self signInWithCredential:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#setLanguageCode" isEqualToString:call.method]) {
-    [self setLanguageCode:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#setSettings" isEqualToString:call.method]) {
-    [self setSettings:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#signInAnonymously" isEqualToString:call.method]) {
-    [self signInAnonymously:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#signInWithCustomToken" isEqualToString:call.method]) {
-    [self signInWithCustomToken:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#signInWithEmailAndPassword" isEqualToString:call.method]) {
-    [self signInWithEmailAndPassword:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#signInWithEmailLink" isEqualToString:call.method]) {
-    [self signInWithEmailLink:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#signOut" isEqualToString:call.method]) {
-    [self signOut:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#useEmulator" isEqualToString:call.method]) {
-    [self useEmulator:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#verifyPasswordResetCode" isEqualToString:call.method]) {
-    [self verifyPasswordResetCode:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"Auth#verifyPhoneNumber" isEqualToString:call.method]) {
-    [self verifyPhoneNumber:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"User#delete" isEqualToString:call.method]) {
-    [self userDelete:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"User#getIdToken" isEqualToString:call.method]) {
-    [self userGetIdToken:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"User#linkWithCredential" isEqualToString:call.method]) {
-    [self userLinkWithCredential:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"User#reauthenticateUserWithCredential" isEqualToString:call.method]) {
-    [self userReauthenticateUserWithCredential:call.arguments
-                          withMethodCallResult:methodCallResult];
-  } else if ([@"User#reload" isEqualToString:call.method]) {
-    [self userReload:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"User#sendEmailVerification" isEqualToString:call.method]) {
-    [self userSendEmailVerification:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"User#unlink" isEqualToString:call.method]) {
-    [self userUnlink:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"User#updateEmail" isEqualToString:call.method]) {
-    [self userUpdateEmail:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"User#updatePassword" isEqualToString:call.method]) {
-    [self userUpdatePassword:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"User#updatePhoneNumber" isEqualToString:call.method]) {
-    [self userUpdatePhoneNumber:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"User#updateProfile" isEqualToString:call.method]) {
-    [self userUpdateProfile:call.arguments withMethodCallResult:methodCallResult];
-  } else if ([@"User#verifyBeforeUpdateEmail" isEqualToString:call.method]) {
-    [self userVerifyBeforeUpdateEmail:call.arguments withMethodCallResult:methodCallResult];
-  } else {
-    methodCallResult.success(FlutterMethodNotImplemented);
-  }
 }
 
 #pragma mark - AppDelegate
@@ -242,7 +273,7 @@ NSString *const kErrMsgInvalidCredential =
 
 - (void)application:(UIApplication *)application
     didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
-  [[FIRAuth auth] setAPNSToken:deviceToken type:FIRAuthAPNSTokenTypeUnknown];
+  _apnsToken = deviceToken;
 }
 
 - (BOOL)application:(UIApplication *)app openURL:(NSURL *)url options:(NSDictionary *)options {
@@ -273,645 +304,872 @@ NSString *const kErrMsgInvalidCredential =
   return @{
     @"APP_LANGUAGE_CODE" : (id)[auth languageCode] ?: [NSNull null],
     @"APP_CURRENT_USER" : [auth currentUser]
-        ? (id)[FLTFirebaseAuthPlugin getNSDictionaryFromUser:[auth currentUser]]
+        ? [PigeonParser getManualList:[PigeonParser getPigeonDetails:[auth currentUser]]]
         : [NSNull null],
   };
 }
 
 #pragma mark - Firebase Auth API
 
-- (void)applyActionCode:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  [auth applyActionCode:arguments[kArgumentCode]
-             completion:^(NSError *_Nullable error) {
-               if (error != nil) {
-                 result.error(nil, nil, nil, error);
-               } else {
-                 result.success(nil);
-               }
-             }];
+// Adapted from
+// https://auth0.com/docs/api-auth/tutorials/nonce#generate-a-cryptographically-random-nonce Used
+// for Apple Sign In
+- (NSString *)randomNonce:(NSInteger)length {
+  NSAssert(length > 0, @"Expected nonce to have positive length");
+  NSString *characterSet = @"0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._";
+  NSMutableString *result = [NSMutableString string];
+  NSInteger remainingLength = length;
+
+  while (remainingLength > 0) {
+    NSMutableArray *randoms = [NSMutableArray arrayWithCapacity:16];
+    for (NSInteger i = 0; i < 16; i++) {
+      uint8_t random = 0;
+      int errorCode = SecRandomCopyBytes(kSecRandomDefault, 1, &random);
+      NSAssert(errorCode == errSecSuccess, @"Unable to generate nonce: OSStatus %i", errorCode);
+
+      [randoms addObject:@(random)];
+    }
+
+    for (NSNumber *random in randoms) {
+      if (remainingLength == 0) {
+        break;
+      }
+
+      if (random.unsignedIntValue < characterSet.length) {
+        unichar character = [characterSet characterAtIndex:random.unsignedIntValue];
+        [result appendFormat:@"%C", character];
+        remainingLength--;
+      }
+    }
+  }
+
+  return [result copy];
 }
 
-- (void)checkActionCode:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  [auth checkActionCode:arguments[kArgumentCode]
-             completion:^(FIRActionCodeInfo *_Nullable info, NSError *_Nullable error) {
-               if (error != nil) {
-                 result.error(nil, nil, nil, error);
-               } else {
-                 NSMutableDictionary *actionCodeResultDict = [NSMutableDictionary dictionary];
-                 NSMutableDictionary *dataDict = [NSMutableDictionary dictionary];
+- (NSString *)stringBySha256HashingString:(NSString *)input {
+  const char *string = [input UTF8String];
+  unsigned char result[CC_SHA256_DIGEST_LENGTH];
+  CC_SHA256(string, (CC_LONG)strlen(string), result);
 
-                 if (info.email != nil) {
-                   dataDict[@"email"] = info.email;
-                 }
-
-                 if (info.previousEmail != nil) {
-                   dataDict[@"previousEmail"] = info.previousEmail;
-                 }
-
-                 if (info.operation == FIRActionCodeOperationPasswordReset) {
-                   actionCodeResultDict[@"operation"] = @1;
-                 } else if (info.operation == FIRActionCodeOperationVerifyEmail) {
-                   actionCodeResultDict[@"operation"] = @2;
-                 } else if (info.operation == FIRActionCodeOperationRecoverEmail) {
-                   actionCodeResultDict[@"operation"] = @3;
-                 } else if (info.operation == FIRActionCodeOperationEmailLink) {
-                   actionCodeResultDict[@"operation"] = @4;
-                 } else if (info.operation == FIRActionCodeOperationVerifyAndChangeEmail) {
-                   actionCodeResultDict[@"operation"] = @5;
-                 } else if (info.operation == FIRActionCodeOperationRevertSecondFactorAddition) {
-                   actionCodeResultDict[@"operation"] = @6;
-                 } else {
-                   // Unknown / Error.
-                   actionCodeResultDict[@"operation"] = @0;
-                 }
-
-                 actionCodeResultDict[@"data"] = dataDict;
-
-                 result.success(actionCodeResultDict);
-               }
-             }];
+  NSMutableString *hashed = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
+  for (NSInteger i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) {
+    [hashed appendFormat:@"%02x", result[i]];
+  }
+  return hashed;
 }
 
-- (void)confirmPasswordReset:(id)arguments
-        withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  [auth confirmPasswordResetWithCode:arguments[kArgumentCode]
-                         newPassword:arguments[@"newPassword"]
+static void handleSignInWithApple(FLTFirebaseAuthPlugin *object, FIRAuthDataResult *authResult,
+                                  NSString *authorizationCode, NSError *error) {
+  if (error != nil) {
+    if (error.code == FIRAuthErrorCodeSecondFactorRequired) {
+      [object handleMultiFactorError:object.appleArguments
+                          completion:object.appleCompletion
+                           withError:error];
+    } else {
+      object.appleCompletion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+    }
+    return;
+  }
+  object.appleCompletion([PigeonParser getPigeonUserCredentialFromAuthResult:authResult
+                                                           authorizationCode:authorizationCode],
+                         nil);
+}
+
+- (void)authorizationController:(ASAuthorizationController *)controller
+    didCompleteWithAuthorization:(ASAuthorization *)authorization
+    API_AVAILABLE(macos(10.15), ios(13.0)) {
+  if ([authorization.credential isKindOfClass:[ASAuthorizationAppleIDCredential class]]) {
+    ASAuthorizationAppleIDCredential *appleIDCredential = authorization.credential;
+    NSString *rawNonce = self.currentNonce;
+    NSAssert(rawNonce != nil,
+             @"Invalid state: A login callback was received, but no login request was sent.");
+
+    if (appleIDCredential.identityToken == nil) {
+      NSLog(@"Unable to fetch identity token.");
+      return;
+    }
+
+    NSString *idToken = [[NSString alloc] initWithData:appleIDCredential.identityToken
+                                              encoding:NSUTF8StringEncoding];
+    if (idToken == nil) {
+      NSLog(@"Unable to serialize id token from data: %@", appleIDCredential.identityToken);
+    }
+
+    NSString *authorizationCode = nil;
+    if (appleIDCredential.authorizationCode != nil) {
+      authorizationCode = [[NSString alloc] initWithData:appleIDCredential.authorizationCode
+                                                encoding:NSUTF8StringEncoding];
+    }
+
+    FIROAuthCredential *credential =
+        [FIROAuthProvider appleCredentialWithIDToken:idToken
+                                            rawNonce:rawNonce
+                                            fullName:appleIDCredential.fullName];
+
+    if (self.isReauthenticatingWithApple == YES) {
+      self.isReauthenticatingWithApple = NO;
+      [[FIRAuth.auth currentUser]
+          reauthenticateWithCredential:credential
+                            completion:^(FIRAuthDataResult *_Nullable authResult,
+                                         NSError *_Nullable error) {
+                              handleSignInWithApple(self, authResult, authorizationCode, error);
+                            }];
+
+    } else if (self.linkWithAppleUser != nil) {
+      [self.linkWithAppleUser
+          linkWithCredential:credential
+                  completion:^(FIRAuthDataResult *authResult, NSError *error) {
+                    self.linkWithAppleUser = nil;
+                    handleSignInWithApple(self, authResult, authorizationCode, error);
+                  }];
+
+    } else {
+      FIRAuth *signInAuth =
+          self.signInWithAppleAuth != nil ? self.signInWithAppleAuth : FIRAuth.auth;
+      [signInAuth signInWithCredential:credential
+                            completion:^(FIRAuthDataResult *_Nullable authResult,
+                                         NSError *_Nullable error) {
+                              self.signInWithAppleAuth = nil;
+                              handleSignInWithApple(self, authResult, authorizationCode, error);
+                            }];
+    }
+  }
+}
+
+- (void)authorizationController:(ASAuthorizationController *)controller
+           didCompleteWithError:(NSError *)error API_AVAILABLE(macos(10.15), ios(13.0)) {
+  NSLog(@"Sign in with Apple errored: %@", error);
+  switch (error.code) {
+    case ASAuthorizationErrorCanceled:
+      self.appleCompletion(
+          nil, [FlutterError errorWithCode:@"canceled"
+                                   message:@"The user canceled the authorization attempt."
+                                   details:nil]);
+      break;
+
+    case ASAuthorizationErrorInvalidResponse:
+      self.appleCompletion(
+          nil,
+          [FlutterError errorWithCode:@"invalid-response"
+                              message:@"The authorization request received an invalid response."
+                              details:nil]);
+      break;
+
+    case ASAuthorizationErrorNotHandled:
+      self.appleCompletion(nil,
+                           [FlutterError errorWithCode:@"not-handled"
+                                               message:@"The authorization request wasn’t handled."
+                                               details:nil]);
+      break;
+
+    case ASAuthorizationErrorFailed:
+      self.appleCompletion(nil, [FlutterError errorWithCode:@"failed"
+                                                    message:@"The authorization attempt failed."
+                                                    details:nil]);
+      break;
+
+    case ASAuthorizationErrorUnknown:
+    default:
+      self.appleCompletion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+      break;
+  }
+  self.appleCompletion = nil;
+}
+
+- (void)handleInternalError:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                              FlutterError *_Nullable))completion
+                  withError:(NSError *)error {
+  const NSError *underlyingError = error.userInfo[@"NSUnderlyingError"];
+  if (underlyingError != nil) {
+    const NSDictionary *details =
+        underlyingError.userInfo[@"FIRAuthErrorUserInfoDeserializedResponseKey"];
+    completion(nil, [FlutterError errorWithCode:@"internal-error"
+                                        message:error.description
+                                        details:details]);
+    return;
+  }
+  completion(nil, [FlutterError errorWithCode:@"internal-error"
+                                      message:error.description
+                                      details:nil]);
+}
+
+- (void)handleMultiFactorError:(AuthPigeonFirebaseApp *)app
+                    completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                                 FlutterError *_Nullable))completion
+                     withError:(NSError *_Nullable)error {
+#if TARGET_OS_OSX
+  completion(nil, [FlutterError errorWithCode:@"second-factor-required"
+                                      message:error.description
+                                      details:nil]);
+#else
+  FIRMultiFactorResolver *resolver =
+      (FIRMultiFactorResolver *)error.userInfo[FIRAuthErrorUserInfoMultiFactorResolverKey];
+
+  NSArray<FIRMultiFactorInfo *> *hints = resolver.hints;
+  FIRMultiFactorSession *session = resolver.session;
+
+  NSString *sessionId = [[NSUUID UUID] UUIDString];
+  self->_multiFactorSessionMap[sessionId] = session;
+
+  NSString *resolverId = [[NSUUID UUID] UUIDString];
+  self->_multiFactorResolverMap[resolverId] = resolver;
+
+  NSMutableArray<NSDictionary *> *pigeonHints = [NSMutableArray array];
+
+  for (FIRMultiFactorInfo *multiFactorInfo in hints) {
+    NSString *phoneNumber;
+    if ([multiFactorInfo class] == [FIRPhoneMultiFactorInfo class]) {
+      FIRPhoneMultiFactorInfo *phoneFactorInfo = (FIRPhoneMultiFactorInfo *)multiFactorInfo;
+      phoneNumber = phoneFactorInfo.phoneNumber;
+    }
+
+    PigeonMultiFactorInfo *object = [PigeonMultiFactorInfo
+        makeWithDisplayName:multiFactorInfo.displayName
+        enrollmentTimestamp:multiFactorInfo.enrollmentDate.timeIntervalSince1970
+                   factorId:multiFactorInfo.factorID
+                        uid:multiFactorInfo.UID
+                phoneNumber:phoneNumber];
+
+    [pigeonHints addObject:object.toList];
+  }
+
+  NSDictionary *output = @{
+    kAppName : app.appName,
+    kArgumentMultiFactorHints : pigeonHints,
+    kArgumentMultiFactorSessionId : sessionId,
+    kArgumentMultiFactorResolverId : resolverId,
+  };
+  completion(nil, [FlutterError errorWithCode:@"second-factor-required"
+                                      message:error.description
+                                      details:output]);
+#endif
+}
+
+static void launchAppleSignInRequest(FLTFirebaseAuthPlugin *object, AuthPigeonFirebaseApp *app,
+                                     PigeonSignInProvider *signInProvider,
+                                     void (^_Nonnull completion)(PigeonUserCredential *_Nullable,
+                                                                 FlutterError *_Nullable)) {
+  if (@available(iOS 13.0, macOS 10.15, *)) {
+    NSString *nonce = [object randomNonce:32];
+    object.currentNonce = nonce;
+    object.appleCompletion = completion;
+    object.appleArguments = app;
+
+    ASAuthorizationAppleIDProvider *appleIDProvider = [[ASAuthorizationAppleIDProvider alloc] init];
+
+    ASAuthorizationAppleIDRequest *request = [appleIDProvider createRequest];
+    NSMutableArray *requestedScopes = [NSMutableArray arrayWithCapacity:2];
+    if ([signInProvider.scopes containsObject:@"name"]) {
+      [requestedScopes addObject:ASAuthorizationScopeFullName];
+    }
+    if ([signInProvider.scopes containsObject:@"email"]) {
+      [requestedScopes addObject:ASAuthorizationScopeEmail];
+    }
+    request.requestedScopes = [requestedScopes copy];
+    request.nonce = [object stringBySha256HashingString:nonce];
+
+    ASAuthorizationController *authorizationController =
+        [[ASAuthorizationController alloc] initWithAuthorizationRequests:@[ request ]];
+    authorizationController.delegate = object;
+    authorizationController.presentationContextProvider = object;
+    [authorizationController performRequests];
+  } else {
+    NSLog(@"Sign in with Apple was introduced in iOS 13, update your Podfile with platform :ios, "
+          @"'13.0'");
+  }
+}
+
+static void handleAppleAuthResult(FLTFirebaseAuthPlugin *object, AuthPigeonFirebaseApp *app,
+                                  FIRAuth *auth, FIRAuthCredential *credentials, NSError *error,
+                                  void (^_Nonnull completion)(PigeonUserCredential *_Nullable,
+                                                              FlutterError *_Nullable)) {
+  if (error) {
+    if (error.code == FIRAuthErrorCodeSecondFactorRequired) {
+      [object handleMultiFactorError:app completion:completion withError:error];
+    } else {
+      completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+    }
+    return;
+  }
+  if (credentials) {
+    [auth signInWithCredential:credentials
+                    completion:^(FIRAuthDataResult *authResult, NSError *error) {
+                      if (error != nil) {
+                        NSDictionary *userInfo = [error userInfo];
+                        NSError *underlyingError = [userInfo objectForKey:NSUnderlyingErrorKey];
+
+                        NSDictionary *firebaseDictionary =
+                            underlyingError.userInfo[@"FIRAuthErrorUserInfoDes"
+                                                     @"erializedResponseKey"];
+
+                        if (firebaseDictionary == nil &&
+                            userInfo[@"FIRAuthErrorUserInfoNameKey"] != nil) {
+                          // Removing since it's not parsed and causing issue when sending back the
+                          // object to Flutter
+                          NSMutableDictionary *mutableUserInfo = [userInfo mutableCopy];
+                          [mutableUserInfo
+                              removeObjectForKey:@"FIRAuthErrorUserInfoUpdatedCredentialKey"];
+                          NSError *modifiedError = [NSError errorWithDomain:error.domain
+                                                                       code:error.code
+                                                                   userInfo:mutableUserInfo];
+
+                          completion(nil,
+                                     [FlutterError errorWithCode:@"sign-in-failed"
+                                                         message:userInfo[@"NSLocalizedDescription"]
+                                                         details:modifiedError.userInfo]);
+
+                        } else if (firebaseDictionary != nil &&
+                                   firebaseDictionary[@"message"] != nil) {
+                          // error from firebase-ios-sdk is
+                          // buried in underlying error.
+                          completion(nil,
+                                     [FlutterError errorWithCode:@"sign-in-failed"
+                                                         message:error.localizedDescription
+                                                         details:firebaseDictionary[@"message"]]);
+                        } else {
+                          completion(nil, [FlutterError errorWithCode:@"sign-in-failed"
+                                                              message:error.localizedDescription
+                                                              details:error.userInfo]);
+                        }
+                      } else {
+                        completion([PigeonParser getPigeonUserCredentialFromAuthResult:authResult
+                                                                     authorizationCode:nil],
+                                   nil);
+                      }
+                    }];
+  }
+}
+
+#pragma mark - Utilities
+
++ (NSNumber *_Nullable)storeAuthCredentialIfPresent:(NSError *)error {
+  if ([error userInfo][FIRAuthErrorUserInfoUpdatedCredentialKey] != nil) {
+    FIRAuthCredential *authCredential = [error userInfo][FIRAuthErrorUserInfoUpdatedCredentialKey];
+    // We temporarily store the non-serializable credential so the
+    // Dart API can consume these at a later time.
+    NSNumber *authCredentialHash = @([authCredential hash]);
+    credentialsMap[authCredentialHash] = authCredential;
+    return authCredentialHash;
+  }
+  return nil;
+}
+
+- (FIRAuth *_Nullable)getFIRAuthFromAppNameFromPigeon:(AuthPigeonFirebaseApp *)pigeonApp {
+  FIRApp *app = [FLTFirebasePlugin firebaseAppNamed:pigeonApp.appName];
+  FIRAuth *auth = [FIRAuth authWithApp:app];
+
+  auth.tenantID = pigeonApp.tenantId;
+  auth.customAuthDomain = [FLTFirebaseCorePlugin getCustomDomain:app.name];
+  // Auth's `customAuthDomain` supersedes value from `getCustomDomain` set by `initializeApp`
+  if (pigeonApp.customAuthDomain != nil) {
+    auth.customAuthDomain = pigeonApp.customAuthDomain;
+  }
+
+  return auth;
+}
+
+- (void)getFIRAuthCredentialFromArguments:(NSDictionary *)arguments
+                                      app:(AuthPigeonFirebaseApp *)app
+                               completion:(void (^)(FIRAuthCredential *credential,
+                                                    NSError *error))completion {
+  // If the credential dictionary contains a token, it means a native one has
+  // been stored for later usage, so we'll attempt to retrieve it here.
+  if (arguments[kArgumentToken] != nil && ![arguments[kArgumentToken] isEqual:[NSNull null]]) {
+    NSNumber *credentialHashCode = arguments[kArgumentToken];
+    if (credentialsMap[credentialHashCode] != nil) {
+      completion(credentialsMap[credentialHashCode], nil);
+      return;
+    }
+  }
+
+  NSString *signInMethod = arguments[kArgumentSignInMethod];
+
+  if ([signInMethod isEqualToString:kSignInMethodGameCenter]) {
+    // Game Center Games is different to other providers, it requires below callback to get a
+    // credential. This is why getFIRAuthCredentialFromArguments now requires a completion()
+    // callback
+    [FIRGameCenterAuthProvider
+        getCredentialWithCompletion:^(FIRAuthCredential *credential, NSError *error) {
+          if (error) {
+            completion(nil, error);
+          } else {
+            completion(credential, nil);
+          }
+        }];
+    return;
+  }
+
+  NSString *secret = arguments[kArgumentSecret] == [NSNull null] ? nil : arguments[kArgumentSecret];
+  NSString *idToken =
+      arguments[kArgumentIdToken] == [NSNull null] ? nil : arguments[kArgumentIdToken];
+  NSString *accessToken =
+      arguments[kArgumentAccessToken] == [NSNull null] ? nil : arguments[kArgumentAccessToken];
+  NSString *rawNonce =
+      arguments[kArgumentRawNonce] == [NSNull null] ? nil : arguments[kArgumentRawNonce];
+
+  // Password Auth
+  if ([signInMethod isEqualToString:kSignInMethodPassword]) {
+    NSString *email = arguments[kArgumentEmail];
+    completion([FIREmailAuthProvider credentialWithEmail:email password:secret], nil);
+    return;
+  }
+
+  // Email Link Auth
+  if ([signInMethod isEqualToString:kSignInMethodEmailLink]) {
+    NSString *email = arguments[kArgumentEmail];
+    NSString *emailLink = arguments[kArgumentEmailLink];
+    completion([FIREmailAuthProvider credentialWithEmail:email link:emailLink], nil);
+    return;
+  }
+
+  // Facebook Auth
+  if ([signInMethod isEqualToString:kSignInMethodFacebook]) {
+    completion([FIRFacebookAuthProvider credentialWithAccessToken:accessToken], nil);
+    return;
+  }
+
+  // Google Auth
+  if ([signInMethod isEqualToString:kSignInMethodGoogle]) {
+    completion([FIRGoogleAuthProvider credentialWithIDToken:idToken accessToken:accessToken], nil);
+    return;
+  }
+
+  // Twitter Auth
+  if ([signInMethod isEqualToString:kSignInMethodTwitter]) {
+    completion([FIRTwitterAuthProvider credentialWithToken:accessToken secret:secret], nil);
+    return;
+  }
+
+  // GitHub Auth
+  if ([signInMethod isEqualToString:kSignInMethodGithub]) {
+    completion([FIRGitHubAuthProvider credentialWithToken:accessToken], nil);
+    return;
+  }
+
+  // Phone Auth - Only supported on iOS
+  if ([signInMethod isEqualToString:kSignInMethodPhone]) {
+#if TARGET_OS_IPHONE
+    NSString *verificationId = arguments[kArgumentVerificationId];
+    NSString *smsCode = arguments[kArgumentSmsCode];
+    completion([[FIRPhoneAuthProvider providerWithAuth:[self getFIRAuthFromAppNameFromPigeon:app]]
+                   credentialWithVerificationID:verificationId
+                               verificationCode:smsCode],
+               nil);
+    return;
+#else
+    NSLog(@"The Firebase Phone Authentication provider is not supported on the "
+          @"MacOS platform.");
+    completion(nil, nil);
+    return;
+#endif
+  }
+  // Apple Auth
+  if ([signInMethod isEqualToString:kSignInMethodApple]) {
+    if (idToken && rawNonce) {
+      // Credential with idToken, rawNonce and fullName
+      NSPersonNameComponents *fullName = [[NSPersonNameComponents alloc] init];
+      fullName.givenName =
+          arguments[kArgumentGivenName] == [NSNull null] ? nil : arguments[kArgumentGivenName];
+      fullName.familyName =
+          arguments[kArgumentFamilyName] == [NSNull null] ? nil : arguments[kArgumentFamilyName];
+      fullName.nickname =
+          arguments[kArgumentNickname] == [NSNull null] ? nil : arguments[kArgumentNickname];
+      fullName.namePrefix =
+          arguments[kArgumentNamePrefix] == [NSNull null] ? nil : arguments[kArgumentNamePrefix];
+      fullName.nameSuffix =
+          arguments[kArgumentNameSuffix] == [NSNull null] ? nil : arguments[kArgumentNameSuffix];
+      fullName.middleName =
+          arguments[kArgumentMiddleName] == [NSNull null] ? nil : arguments[kArgumentMiddleName];
+
+      completion([FIROAuthProvider appleCredentialWithIDToken:idToken
+                                                     rawNonce:rawNonce
+                                                     fullName:fullName],
+                 nil);
+      return;
+    }
+  }
+  // OAuth
+  if ([signInMethod isEqualToString:kSignInMethodOAuth]) {
+    NSString *providerId = arguments[kArgumentProviderId];
+    completion([FIROAuthProvider credentialWithProviderID:providerId
+                                                  IDToken:idToken
+                                                 rawNonce:rawNonce
+                                              accessToken:accessToken],
+               nil);
+    return;
+  }
+
+  NSLog(@"Support for an auth provider with identifier '%@' is not implemented.", signInMethod);
+  completion(nil, nil);
+  return;
+}
+
+- (void)ensureAPNSTokenSetting {
+#if !TARGET_OS_OSX
+  FIRApp *defaultApp = [FIRApp defaultApp];
+  if (defaultApp) {
+    if ([FIRAuth auth].APNSToken == nil && _apnsToken != nil) {
+      [[FIRAuth auth] setAPNSToken:_apnsToken type:FIRAuthAPNSTokenTypeUnknown];
+      _apnsToken = nil;
+    }
+  }
+#endif
+}
+
+#if !TARGET_OS_OSX
+- (FIRMultiFactor *)getAppMultiFactorFromPigeon:(nonnull AuthPigeonFirebaseApp *)app {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  return currentUser.multiFactor;
+}
+#endif
+
+- (nonnull ASPresentationAnchor)presentationAnchorForAuthorizationController:
+    (nonnull ASAuthorizationController *)controller API_AVAILABLE(macos(10.15), ios(13.0)) {
+#if TARGET_OS_OSX
+  return [[NSApplication sharedApplication] keyWindow];
+#else
+  return [[UIApplication sharedApplication] keyWindow];
+#endif
+}
+
+#if TARGET_OS_IPHONE
+
+- (void)enrollPhoneApp:(nonnull AuthPigeonFirebaseApp *)app
+             assertion:(nonnull PigeonPhoneMultiFactorAssertion *)assertion
+           displayName:(nullable NSString *)displayName
+            completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRMultiFactor *multiFactor = [self getAppMultiFactorFromPigeon:app];
+
+  FIRPhoneAuthCredential *credential =
+      [[FIRPhoneAuthProvider providerWithAuth:[self getFIRAuthFromAppNameFromPigeon:app]]
+          credentialWithVerificationID:[assertion verificationId]
+                      verificationCode:[assertion verificationCode]];
+
+  FIRMultiFactorAssertion *multiFactorAssertion =
+      [FIRPhoneMultiFactorGenerator assertionWithCredential:credential];
+
+  [multiFactor enrollWithAssertion:multiFactorAssertion
+                       displayName:displayName
+                        completion:^(NSError *_Nullable error) {
+                          if (error == nil) {
+                            completion(nil);
+                          } else {
+                            completion([FlutterError errorWithCode:@"enroll-failed"
+                                                           message:error.localizedDescription
+                                                           details:nil]);
+                          }
+                        }];
+}
+
+- (void)getEnrolledFactorsApp:(nonnull AuthPigeonFirebaseApp *)app
+                   completion:(nonnull void (^)(NSArray<PigeonMultiFactorInfo *> *_Nullable,
+                                                FlutterError *_Nullable))completion {
+  FIRMultiFactor *multiFactor = [self getAppMultiFactorFromPigeon:app];
+
+  NSArray<FIRMultiFactorInfo *> *enrolledFactors = [multiFactor enrolledFactors];
+
+  NSMutableArray<PigeonMultiFactorInfo *> *results = [NSMutableArray array];
+
+  for (FIRMultiFactorInfo *multiFactorInfo in enrolledFactors) {
+    NSString *phoneNumber;
+    if ([multiFactorInfo class] == [FIRPhoneMultiFactorInfo class]) {
+      FIRPhoneMultiFactorInfo *phoneFactorInfo = (FIRPhoneMultiFactorInfo *)multiFactorInfo;
+      phoneNumber = phoneFactorInfo.phoneNumber;
+    }
+
+    [results addObject:[PigeonMultiFactorInfo
+                           makeWithDisplayName:multiFactorInfo.displayName
+                           enrollmentTimestamp:multiFactorInfo.enrollmentDate.timeIntervalSince1970
+                                      factorId:multiFactorInfo.factorID
+                                           uid:multiFactorInfo.UID
+                                   phoneNumber:phoneNumber]];
+  }
+
+  completion(results, nil);
+}
+
+- (void)getSessionApp:(nonnull AuthPigeonFirebaseApp *)app
+           completion:(nonnull void (^)(PigeonMultiFactorSession *_Nullable,
+                                        FlutterError *_Nullable))completion {
+  FIRMultiFactor *multiFactor = [self getAppMultiFactorFromPigeon:app];
+  [multiFactor getSessionWithCompletion:^(FIRMultiFactorSession *_Nullable session,
+                                          NSError *_Nullable error) {
+    NSString *UUID = [[NSUUID UUID] UUIDString];
+    self->_multiFactorSessionMap[UUID] = session;
+
+    PigeonMultiFactorSession *pigeonSession = [PigeonMultiFactorSession makeWithId:UUID];
+    completion(pigeonSession, nil);
+  }];
+}
+
+- (void)unenrollApp:(nonnull AuthPigeonFirebaseApp *)app
+          factorUid:(nonnull NSString *)factorUid
+         completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRMultiFactor *multiFactor = [self getAppMultiFactorFromPigeon:app];
+  [multiFactor unenrollWithFactorUID:factorUid
                           completion:^(NSError *_Nullable error) {
-                            if (error != nil) {
-                              result.error(nil, nil, nil, error);
+                            if (error == nil) {
+                              completion(nil);
                             } else {
-                              result.success(nil);
+                              completion([FlutterError errorWithCode:@"unenroll-failed"
+                                                             message:error.localizedDescription
+                                                             details:nil]);
                             }
                           }];
 }
 
-- (void)createUserWithEmailAndPassword:(id)arguments
-                  withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  [auth createUserWithEmail:arguments[kArgumentEmail]
-                   password:arguments[@"password"]
-                 completion:^(FIRAuthDataResult *authResult, NSError *error) {
+- (void)enrollTotpApp:(nonnull AuthPigeonFirebaseApp *)app
+          assertionId:(nonnull NSString *)assertionId
+          displayName:(nullable NSString *)displayName
+           completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRMultiFactor *multiFactor = [self getAppMultiFactorFromPigeon:app];
+
+  FIRMultiFactorAssertion *assertion = _multiFactorAssertionMap[assertionId];
+
+  [multiFactor enrollWithAssertion:assertion
+                       displayName:displayName
+                        completion:^(NSError *_Nullable error) {
+                          if (error == nil) {
+                            completion(nil);
+                          } else {
+                            completion([FlutterError errorWithCode:@"enroll-failed"
+                                                           message:error.localizedDescription
+                                                           details:nil]);
+                          }
+                        }];
+}
+
+- (void)resolveSignInResolverId:(nonnull NSString *)resolverId
+                      assertion:(nullable PigeonPhoneMultiFactorAssertion *)assertion
+                totpAssertionId:(nullable NSString *)totpAssertionId
+                     completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                                  FlutterError *_Nullable))completion {
+  FIRMultiFactorResolver *resolver = _multiFactorResolverMap[resolverId];
+
+  FIRMultiFactorAssertion *multiFactorAssertion;
+
+  if (assertion != nil) {
+    FIRPhoneAuthCredential *credential =
+        [[FIRPhoneAuthProvider provider] credentialWithVerificationID:[assertion verificationId]
+                                                     verificationCode:[assertion verificationCode]];
+    multiFactorAssertion = [FIRPhoneMultiFactorGenerator assertionWithCredential:credential];
+  } else if (totpAssertionId != nil) {
+    multiFactorAssertion = _multiFactorAssertionMap[totpAssertionId];
+  } else {
+    completion(nil,
+               [FlutterError errorWithCode:@"resolve-signin-failed"
+                                   message:@"Neither assertion nor totpAssertionId were provided"
+                                   details:nil]);
+    return;
+  }
+
+  [resolver
+      resolveSignInWithAssertion:multiFactorAssertion
+                      completion:^(FIRAuthDataResult *_Nullable authResult,
+                                   NSError *_Nullable error) {
+                        if (error == nil) {
+                          completion([PigeonParser getPigeonUserCredentialFromAuthResult:authResult
+                                                                       authorizationCode:nil],
+                                     nil);
+                        } else {
+                          completion(nil, [FlutterError errorWithCode:@"resolve-signin-failed"
+                                                              message:error.localizedDescription
+                                                              details:nil]);
+                        }
+                      }];
+}
+
+- (void)generateSecretSessionId:(nonnull NSString *)sessionId
+                     completion:(nonnull void (^)(PigeonTotpSecret *_Nullable,
+                                                  FlutterError *_Nullable))completion {
+  FIRMultiFactorSession *multiFactorSession = _multiFactorSessionMap[sessionId];
+
+  [FIRTOTPMultiFactorGenerator
+      generateSecretWithMultiFactorSession:multiFactorSession
+                                completion:^(FIRTOTPSecret *_Nullable secret,
+                                             NSError *_Nullable error) {
+                                  if (error == nil) {
+                                    self->_multiFactorTotpSecretMap[secret.sharedSecretKey] =
+                                        secret;
+                                    completion([PigeonParser getPigeonTotpSecret:secret], nil);
+                                  } else {
+                                    completion(
+                                        nil, [FlutterError errorWithCode:@"generate-secret-failed"
+                                                                 message:error.localizedDescription
+                                                                 details:nil]);
+                                  }
+                                }];
+}
+
+- (void)getAssertionForEnrollmentSecretKey:(nonnull NSString *)secretKey
+                           oneTimePassword:(nonnull NSString *)oneTimePassword
+                                completion:(nonnull void (^)(NSString *_Nullable,
+                                                             FlutterError *_Nullable))completion {
+  FIRTOTPSecret *totpSecret = _multiFactorTotpSecretMap[secretKey];
+
+  FIRTOTPMultiFactorAssertion *assertion =
+      [FIRTOTPMultiFactorGenerator assertionForEnrollmentWithSecret:totpSecret
+                                                    oneTimePassword:oneTimePassword];
+
+  NSString *UUID = [[NSUUID UUID] UUIDString];
+  self->_multiFactorAssertionMap[UUID] = assertion;
+  completion(UUID, nil);
+}
+
+- (void)getAssertionForSignInEnrollmentId:(nonnull NSString *)enrollmentId
+                          oneTimePassword:(nonnull NSString *)oneTimePassword
+                               completion:(nonnull void (^)(NSString *_Nullable,
+                                                            FlutterError *_Nullable))completion {
+  FIRTOTPMultiFactorAssertion *assertion =
+      [FIRTOTPMultiFactorGenerator assertionForSignInWithEnrollmentID:enrollmentId
+                                                      oneTimePassword:oneTimePassword];
+  NSString *UUID = [[NSUUID UUID] UUIDString];
+  self->_multiFactorAssertionMap[UUID] = assertion;
+  completion(UUID, nil);
+}
+
+- (void)generateQrCodeUrlSecretKey:(nonnull NSString *)secretKey
+                       accountName:(nullable NSString *)accountName
+                            issuer:(nullable NSString *)issuer
+                        completion:(nonnull void (^)(NSString *_Nullable,
+                                                     FlutterError *_Nullable))completion {
+  FIRTOTPSecret *totpSecret = _multiFactorTotpSecretMap[secretKey];
+  completion([totpSecret generateQRCodeURLWithAccountName:accountName issuer:issuer], nil);
+}
+
+- (void)openInOtpAppSecretKey:(nonnull NSString *)secretKey
+                    qrCodeUrl:(nonnull NSString *)qrCodeUrl
+                   completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRTOTPSecret *totpSecret = _multiFactorTotpSecretMap[secretKey];
+  [totpSecret openInOTPAppWithQRCodeURL:qrCodeUrl];
+  completion(nil);
+}
+
+#endif
+
+- (void)applyActionCodeApp:(nonnull AuthPigeonFirebaseApp *)app
+                      code:(nonnull NSString *)code
+                completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  [auth applyActionCode:code
+             completion:^(NSError *_Nullable error) {
+               if (error != nil) {
+                 completion([FLTFirebaseAuthPlugin convertToFlutterError:error]);
+               } else {
+                 completion(nil);
+               }
+             }];
+}
+
+- (void)revokeTokenWithAuthorizationCodeApp:(nonnull AuthPigeonFirebaseApp *)app
+                          authorizationCode:(nonnull NSString *)authorizationCode
+                                 completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  [auth revokeTokenWithAuthorizationCode:authorizationCode
+                              completion:^(NSError *_Nullable error) {
+                                if (error != nil) {
+                                  completion([FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                                } else {
+                                  completion(nil);
+                                }
+                              }];
+}
+
+- (void)checkActionCodeApp:(nonnull AuthPigeonFirebaseApp *)app
+                      code:(nonnull NSString *)code
+                completion:(nonnull void (^)(PigeonActionCodeInfo *_Nullable,
+                                             FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  [auth checkActionCode:code
+             completion:^(FIRActionCodeInfo *_Nullable info, NSError *_Nullable error) {
+               if (error != nil) {
+                 completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+               } else {
+                 completion([PigeonParser parseActionCode:info], nil);
+               }
+             }];
+}
+
+- (void)confirmPasswordResetApp:(nonnull AuthPigeonFirebaseApp *)app
+                           code:(nonnull NSString *)code
+                    newPassword:(nonnull NSString *)newPassword
+                     completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  [auth confirmPasswordResetWithCode:code
+                         newPassword:newPassword
+                          completion:^(NSError *_Nullable error) {
+                            if (error != nil) {
+                              completion([FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                            } else {
+                              completion(nil);
+                            }
+                          }];
+}
+
+- (void)createUserWithEmailAndPasswordApp:(nonnull AuthPigeonFirebaseApp *)app
+                                    email:(nonnull NSString *)email
+                                 password:(nonnull NSString *)password
+                               completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                                            FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  [auth createUserWithEmail:email
+                   password:password
+                 completion:^(FIRAuthDataResult *_Nullable authResult, NSError *_Nullable error) {
                    if (error != nil) {
-                     result.error(nil, nil, nil, error);
+                     completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
                    } else {
-                     result.success(authResult);
+                     completion([PigeonParser getPigeonUserCredentialFromAuthResult:authResult
+                                                                  authorizationCode:nil],
+                                nil);
                    }
                  }];
 }
 
-- (void)fetchSignInMethodsForEmail:(id)arguments
-              withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  [auth fetchSignInMethodsForEmail:arguments[kArgumentEmail]
+- (void)fetchSignInMethodsForEmailApp:(nonnull AuthPigeonFirebaseApp *)app
+                                email:(nonnull NSString *)email
+                           completion:(nonnull void (^)(NSArray<NSString *> *_Nullable,
+                                                        FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  [auth fetchSignInMethodsForEmail:email
                         completion:^(NSArray<NSString *> *_Nullable providers,
                                      NSError *_Nullable error) {
                           if (error != nil) {
-                            result.error(nil, nil, nil, error);
+                            completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
                           } else {
-                            result.success(@{
-                              @"providers" : (id)providers ?: @[],
-                            });
-                          }
-                        }];
-}
-
-- (void)sendPasswordResetEmail:(id)arguments
-          withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  NSString *email = arguments[kArgumentEmail];
-  FIRActionCodeSettings *actionCodeSettings =
-      [self getFIRActionCodeSettingsFromArguments:arguments];
-  [auth sendPasswordResetWithEmail:email
-                actionCodeSettings:actionCodeSettings
-                        completion:^(NSError *_Nullable error) {
-                          if (error != nil) {
-                            result.error(nil, nil, nil, error);
-                          } else {
-                            result.success(nil);
-                          }
-                        }];
-}
-
-- (void)sendSignInLinkToEmail:(id)arguments
-         withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  NSString *email = arguments[kArgumentEmail];
-  FIRActionCodeSettings *actionCodeSettings =
-      [self getFIRActionCodeSettingsFromArguments:arguments];
-  [auth sendSignInLinkToEmail:email
-           actionCodeSettings:actionCodeSettings
-                   completion:^(NSError *_Nullable error) {
-                     if (error != nil) {
-                       result.error(nil, nil, nil, error);
-                     } else {
-                       result.success(nil);
-                     }
-                   }];
-}
-
-- (void)signInWithCredential:(id)arguments
-        withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  FIRAuthCredential *credential = [self getFIRAuthCredentialFromArguments:arguments];
-
-  if (credential == nil) {
-    result.error(kErrCodeInvalidCredential, kErrMsgInvalidCredential, nil, nil);
-    return;
-  }
-
-  [auth signInWithCredential:credential
-                  completion:^(FIRAuthDataResult *authResult, NSError *error) {
-                    if (error != nil) {
-                      NSDictionary *userInfo = [error userInfo];
-                      NSError *underlyingError = [userInfo objectForKey:NSUnderlyingErrorKey];
-
-                      NSDictionary *firebaseDictionary =
-                          underlyingError.userInfo[@"FIRAuthErrorUserInfoDeserializedResponseKey"];
-
-                      if (firebaseDictionary != nil && firebaseDictionary[@"message"] != nil) {
-                        // error from firebase-ios-sdk is buried in underlying error.
-                        result.error(nil, firebaseDictionary[@"message"], nil, nil);
-                      } else {
-                        result.error(nil, nil, nil, error);
-                      }
-                    } else {
-                      result.success(authResult);
-                    }
-                  }];
-}
-
-- (void)setLanguageCode:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  NSString *languageCode = arguments[@"languageCode"];
-
-  if (languageCode != nil && ![languageCode isEqual:[NSNull null]]) {
-    auth.languageCode = languageCode;
-  } else {
-    [auth useAppLanguage];
-  }
-
-  result.success(@{@"languageCode" : auth.languageCode});
-}
-
-- (void)setSettings:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-
-  if ([[arguments allKeys] containsObject:@"userAccessGroup"] &&
-      ![arguments[@"userAccessGroup"] isEqual:[NSNull null]]) {
-    BOOL useUserAccessGroupSuccessful;
-    NSError *useUserAccessGroupErrorPtr;
-    useUserAccessGroupSuccessful = [auth useUserAccessGroup:arguments[@"userAccessGroup"]
-                                                      error:&useUserAccessGroupErrorPtr];
-    if (!useUserAccessGroupSuccessful) {
-      return result.error(nil, nil, nil, useUserAccessGroupErrorPtr);
-    }
-  }
-
-#if TARGET_OS_IPHONE
-  if ([[arguments allKeys] containsObject:@"appVerificationDisabledForTesting"] &&
-      ![arguments[@"appVerificationDisabledForTesting"] isEqual:[NSNull null]]) {
-    auth.settings.appVerificationDisabledForTesting =
-        [arguments[@"appVerificationDisabledForTesting"] boolValue];
-  }
-#else
-  NSLog(@"FIRAuthSettings.appVerificationDisabledForTesting is not supported on MacOS.");
-#endif
-
-  result.success(nil);
-}
-
-- (void)signInWithCustomToken:(id)arguments
-         withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-
-  [auth signInWithCustomToken:arguments[kArgumentToken]
-                   completion:^(FIRAuthDataResult *_Nullable authResult, NSError *_Nullable error) {
-                     if (error != nil) {
-                       result.error(nil, nil, nil, error);
-                     } else {
-                       result.success(authResult);
-                     }
-                   }];
-}
-
-- (void)signInWithEmailAndPassword:(id)arguments
-              withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  [auth signInWithEmail:arguments[kArgumentEmail]
-               password:arguments[@"password"]
-             completion:^(FIRAuthDataResult *_Nullable authResult, NSError *_Nullable error) {
-               if (error != nil) {
-                 result.error(nil, nil, nil, error);
-               } else {
-                 result.success(authResult);
-               }
-             }];
-}
-
-- (void)signInWithEmailLink:(id)arguments
-       withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  [auth signInWithEmail:arguments[kArgumentEmail]
-                   link:arguments[@"emailLink"]
-             completion:^(FIRAuthDataResult *_Nullable authResult, NSError *_Nullable error) {
-               if (error != nil) {
-                 result.error(nil, nil, nil, error);
-               } else {
-                 result.success(authResult);
-               }
-             }];
-}
-
-- (void)signOut:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-
-  if (auth.currentUser == nil) {
-    result.success(nil);
-    return;
-  }
-
-  NSError *signOutErrorPtr;
-  BOOL signOutSuccessful = [auth signOut:&signOutErrorPtr];
-
-  if (!signOutSuccessful) {
-    result.error(nil, nil, nil, signOutErrorPtr);
-  } else {
-    result.success(nil);
-  }
-}
-
-- (void)useEmulator:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  [auth useEmulatorWithHost:arguments[@"host"] port:[arguments[@"port"] integerValue]];
-  result.success(nil);
-}
-
-- (void)verifyPasswordResetCode:(id)arguments
-           withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-
-  [auth verifyPasswordResetCode:arguments[kArgumentCode]
-                     completion:^(NSString *_Nullable email, NSError *_Nullable error) {
-                       if (error != nil) {
-                         result.error(nil, nil, nil, error);
-                       } else {
-                         result.success(@{kArgumentEmail : (id)email ?: [NSNull null]});
-                       }
-                     }];
-}
-
-- (void)userDelete:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
-
-  [currentUser deleteWithCompletion:^(NSError *_Nullable error) {
-    if (error != nil) {
-      result.error(nil, nil, nil, error);
-    } else {
-      result.success(nil);
-    }
-  }];
-}
-
-- (void)userGetIdToken:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
-
-  BOOL forceRefresh = [arguments[@"forceRefresh"] boolValue];
-  BOOL tokenOnly = [arguments[@"tokenOnly"] boolValue];
-
-  [currentUser
-      getIDTokenResultForcingRefresh:forceRefresh
-                          completion:^(FIRAuthTokenResult *tokenResult, NSError *error) {
-                            if (error != nil) {
-                              result.error(nil, nil, nil, error);
-                              return;
-                            }
-
-                            if (tokenOnly) {
-                              result.success(
-                                  @{kArgumentToken : (id)tokenResult.token ?: [NSNull null]});
+                            if (providers == nil) {
+                              completion(@[], nil);
                             } else {
-                              long expirationTimestamp =
-                                  (long)[tokenResult.expirationDate timeIntervalSince1970] * 1000;
-                              long authTimestamp =
-                                  (long)[tokenResult.authDate timeIntervalSince1970] * 1000;
-                              long issuedAtTimestamp =
-                                  (long)[tokenResult.issuedAtDate timeIntervalSince1970] * 1000;
-
-                              NSMutableDictionary *tokenData =
-                                  [[NSMutableDictionary alloc] initWithDictionary:@{
-                                    @"authTimestamp" : @(authTimestamp),
-                                    @"claims" : tokenResult.claims,
-                                    @"expirationTimestamp" : @(expirationTimestamp),
-                                    @"issuedAtTimestamp" : @(issuedAtTimestamp),
-                                    @"signInProvider" : (id)tokenResult.signInProvider
-                                        ?: [NSNull null],
-                                    @"signInSecondFactor" : (id)tokenResult.signInSecondFactor
-                                        ?: [NSNull null],
-                                    kArgumentToken : tokenResult.token,
-                                  }];
-
-                              result.success(tokenData);
+                              completion(providers, nil);
                             }
-                          }];
+                          }
+                        }];
 }
 
-- (void)userLinkWithCredential:(id)arguments
-          withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
+- (void)registerAuthStateListenerApp:(nonnull AuthPigeonFirebaseApp *)app
+                          completion:(nonnull void (^)(NSString *_Nullable,
+                                                       FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
 
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
+  NSString *name =
+      [NSString stringWithFormat:@"%@/auth-state/%@", kFLTFirebaseAuthChannelName, auth.app.name];
+  FlutterEventChannel *channel = [FlutterEventChannel eventChannelWithName:name
+                                                           binaryMessenger:_binaryMessenger];
 
-  FIRAuthCredential *credential = [self getFIRAuthCredentialFromArguments:arguments];
-  if (credential == nil) {
-    result.error(kErrCodeInvalidCredential, kErrMsgInvalidCredential, nil, nil);
-    return;
-  }
+  FLTAuthStateChannelStreamHandler *handler =
+      [[FLTAuthStateChannelStreamHandler alloc] initWithAuth:auth];
+  [channel setStreamHandler:handler];
 
-  [currentUser linkWithCredential:credential
-                       completion:^(FIRAuthDataResult *authResult, NSError *error) {
-                         if (error != nil) {
-                           result.error(nil, nil, nil, error);
-                         } else {
-                           result.success(authResult);
-                         }
-                       }];
+  [_eventChannels setObject:channel forKey:name];
+  [_streamHandlers setObject:handler forKey:name];
+
+  completion(name, nil);
 }
 
-- (void)userReauthenticateUserWithCredential:(id)arguments
-                        withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
-
-  FIRAuthCredential *credential = [self getFIRAuthCredentialFromArguments:arguments];
-  if (credential == nil) {
-    result.error(kErrCodeInvalidCredential, kErrMsgInvalidCredential, nil, nil);
-    return;
-  }
-
-  [currentUser reauthenticateWithCredential:credential
-                                 completion:^(FIRAuthDataResult *authResult, NSError *error) {
-                                   if (error != nil) {
-                                     result.error(nil, nil, nil, error);
-                                   } else {
-                                     result.success(authResult);
-                                   }
-                                 }];
-}
-
-- (void)userReload:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
-
-  [currentUser reloadWithCompletion:^(NSError *_Nullable error) {
-    if (error != nil) {
-      result.error(nil, nil, nil, error);
-    } else {
-      result.success(auth.currentUser);
-    }
-  }];
-}
-
-- (void)userSendEmailVerification:(id)arguments
-             withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
-
-  FIRActionCodeSettings *actionCodeSettings =
-      [self getFIRActionCodeSettingsFromArguments:arguments];
-  [currentUser sendEmailVerificationWithActionCodeSettings:actionCodeSettings
-                                                completion:^(NSError *_Nullable error) {
-                                                  if (error != nil) {
-                                                    result.error(nil, nil, nil, error);
-                                                  } else {
-                                                    result.success(nil);
-                                                  }
-                                                }];
-}
-
-- (void)userUnlink:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
-
-  [currentUser
-      unlinkFromProvider:arguments[kArgumentProviderId]
-              completion:^(FIRUser *_Nullable user, NSError *_Nullable error) {
-                if (error != nil) {
-                  result.error(nil, nil, nil, error);
-                } else {
-                  [auth.currentUser reloadWithCompletion:^(NSError *_Nullable reloadError) {
-                    if (reloadError != nil) {
-                      result.error(nil, nil, nil, reloadError);
-                    } else {
-                      // Note: On other SDKs `unlinkFromProvider` returns an AuthResult
-                      // instance, whereas the iOS SDK currently does not, so we manualy
-                      // construct a Dart representation of one here.
-                      result.success(@{
-                        @"additionalUserInfo" : [NSNull null],
-                        @"authCredential" : [NSNull null],
-                        @"user" : auth.currentUser
-                            ? [FLTFirebaseAuthPlugin getNSDictionaryFromUser:auth.currentUser]
-                            : [NSNull null],
-                      });
-                    }
-                  }];
-                }
-              }];
-}
-
-- (void)userUpdateEmail:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
-
-  [currentUser updateEmail:arguments[kArgumentNewEmail]
-                completion:^(NSError *_Nullable error) {
-                  if (error != nil) {
-                    result.error(nil, nil, nil, error);
-                  } else {
-                    [currentUser reloadWithCompletion:^(NSError *_Nullable reloadError) {
-                      if (reloadError != nil) {
-                        result.error(nil, nil, nil, reloadError);
-                      } else {
-                        result.success(auth.currentUser);
-                      }
-                    }];
-                  }
-                }];
-}
-
-- (void)userUpdatePassword:(id)arguments
-      withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
-
-  [currentUser updatePassword:arguments[@"newPassword"]
-                   completion:^(NSError *_Nullable error) {
-                     if (error != nil) {
-                       result.error(nil, nil, nil, error);
-                     } else {
-                       [currentUser reloadWithCompletion:^(NSError *_Nullable reloadError) {
-                         if (reloadError != nil) {
-                           result.error(nil, nil, nil, reloadError);
-                         } else {
-                           result.success(auth.currentUser);
-                         }
-                       }];
-                     }
-                   }];
-}
-
-- (void)userUpdatePhoneNumber:(id)arguments
-         withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-#if TARGET_OS_IPHONE
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
-
-  FIRAuthCredential *credential = [self getFIRAuthCredentialFromArguments:arguments];
-  if (credential == nil) {
-    result.error(kErrCodeInvalidCredential, kErrMsgInvalidCredential, nil, nil);
-    return;
-  }
-
-  [currentUser
-      updatePhoneNumberCredential:(FIRPhoneAuthCredential *)credential
-                       completion:^(NSError *_Nullable error) {
-                         if (error != nil) {
-                           result.error(nil, nil, nil, error);
-                         } else {
-                           [currentUser reloadWithCompletion:^(NSError *_Nullable reloadError) {
-                             if (reloadError != nil) {
-                               result.error(nil, nil, nil, reloadError);
-                             } else {
-                               result.success(auth.currentUser);
-                             }
-                           }];
-                         }
-                       }];
-#else
-  NSLog(@"Updating a users phone number via Firebase Authentication is only supported on the iOS "
-        @"platform.");
-  result.success(nil);
-#endif
-}
-
-- (void)userUpdateProfile:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
-
-  NSDictionary *profileUpdates = arguments[@"profile"];
-  FIRUserProfileChangeRequest *changeRequest = [currentUser profileChangeRequest];
-
-  if (profileUpdates[@"displayName"] != nil) {
-    if ([profileUpdates[@"displayName"] isEqual:[NSNull null]]) {
-      changeRequest.displayName = nil;
-    } else {
-      changeRequest.displayName = profileUpdates[@"displayName"];
-    }
-  }
-
-  if (profileUpdates[@"photoURL"] != nil) {
-    if ([profileUpdates[@"photoURL"] isEqual:[NSNull null]]) {
-      // We apparently cannot set photoURL to nil/NULL to remove it.
-      // Instead, setting it to empty string appears to work.
-      // When doing so, Dart will properly receive `null` anyway.
-      changeRequest.photoURL = [NSURL URLWithString:@""];
-    } else {
-      changeRequest.photoURL = [NSURL URLWithString:profileUpdates[@"photoURL"]];
-    }
-  }
-
-  [changeRequest commitChangesWithCompletion:^(NSError *error) {
-    if (error != nil) {
-      result.error(nil, nil, nil, error);
-    } else {
-      [currentUser reloadWithCompletion:^(NSError *_Nullable reloadError) {
-        if (reloadError != nil) {
-          result.error(nil, nil, nil, reloadError);
-        } else {
-          result.success(auth.currentUser);
-        }
-      }];
-    }
-  }];
-}
-
-- (void)userVerifyBeforeUpdateEmail:(id)arguments
-               withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-
-  FIRUser *currentUser = auth.currentUser;
-  if (currentUser == nil) {
-    result.error(kErrCodeNoCurrentUser, kErrMsgNoCurrentUser, nil, nil);
-    return;
-  }
-
-  NSString *newEmail = arguments[kArgumentNewEmail];
-  FIRActionCodeSettings *actionCodeSettings =
-      [self getFIRActionCodeSettingsFromArguments:arguments];
-  [currentUser sendEmailVerificationBeforeUpdatingEmail:newEmail
-                                     actionCodeSettings:actionCodeSettings
-                                             completion:^(NSError *error) {
-                                               if (error != nil) {
-                                                 result.error(nil, nil, nil, error);
-                                               } else {
-                                                 result.success(nil);
-                                               }
-                                             }];
-}
-
-- (void)registerIdTokenListener:(id)arguments
-           withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
+- (void)registerIdTokenListenerApp:(nonnull AuthPigeonFirebaseApp *)app
+                        completion:(nonnull void (^)(NSString *_Nullable,
+                                                     FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
 
   NSString *name =
       [NSString stringWithFormat:@"%@/id-token/%@", kFLTFirebaseAuthChannelName, auth.app.name];
@@ -926,369 +1184,942 @@ NSString *const kErrMsgInvalidCredential =
   [_eventChannels setObject:channel forKey:name];
   [_streamHandlers setObject:handler forKey:name];
 
-  result.success(name);
+  completion(name, nil);
 }
 
-- (void)registerAuthStateListener:(id)arguments
-             withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
-
-  NSString *name =
-      [NSString stringWithFormat:@"%@/auth-state/%@", kFLTFirebaseAuthChannelName, auth.app.name];
-  FlutterEventChannel *channel = [FlutterEventChannel eventChannelWithName:name
-                                                           binaryMessenger:_binaryMessenger];
-
-  FLTAuthStateChannelStreamHandler *handler =
-      [[FLTAuthStateChannelStreamHandler alloc] initWithAuth:auth];
-  [channel setStreamHandler:handler];
-
-  [_eventChannels setObject:channel forKey:name];
-  [_streamHandlers setObject:handler forKey:name];
-
-  result.success(name);
+- (void)sendPasswordResetEmailApp:(nonnull AuthPigeonFirebaseApp *)app
+                            email:(nonnull NSString *)email
+               actionCodeSettings:(nullable PigeonActionCodeSettings *)actionCodeSettings
+                       completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  if (actionCodeSettings != nil) {
+    FIRActionCodeSettings *settings = [PigeonParser parseActionCodeSettings:actionCodeSettings];
+    [auth sendPasswordResetWithEmail:email
+                  actionCodeSettings:settings
+                          completion:^(NSError *_Nullable error) {
+                            if (error != nil) {
+                              completion([FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                            } else {
+                              completion(nil);
+                            }
+                          }];
+  } else {
+    [auth sendPasswordResetWithEmail:email
+                          completion:^(NSError *_Nullable error) {
+                            if (error != nil) {
+                              completion([FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                            } else {
+                              completion(nil);
+                            }
+                          }];
+  }
 }
 
-- (void)signInAnonymously:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
+- (void)sendSignInLinkToEmailApp:(nonnull AuthPigeonFirebaseApp *)app
+                           email:(nonnull NSString *)email
+              actionCodeSettings:(nonnull PigeonActionCodeSettings *)actionCodeSettings
+                      completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  [auth sendSignInLinkToEmail:email
+           actionCodeSettings:[PigeonParser parseActionCodeSettings:actionCodeSettings]
+                   completion:^(NSError *_Nullable error) {
+                     if (error != nil) {
+                       if (error.code == FIRAuthErrorCodeInternalError) {
+                         [self
+                             handleInternalError:^(PigeonUserCredential *_Nullable creds,
+                                                   FlutterError *_Nullable internalError) {
+                               completion(internalError);
+                             }
+                                       withError:error];
+                       } else {
+                         completion([FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                       }
+                     } else {
+                       completion(nil);
+                     }
+                   }];
+}
+
+- (void)setLanguageCodeApp:(nonnull AuthPigeonFirebaseApp *)app
+              languageCode:(nullable NSString *)languageCode
+                completion:
+                    (nonnull void (^)(NSString *_Nullable, FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+
+  if (languageCode != nil && ![languageCode isEqual:[NSNull null]]) {
+    auth.languageCode = languageCode;
+  } else {
+    [auth useAppLanguage];
+  }
+
+  completion(auth.languageCode, nil);
+}
+
+- (void)setSettingsApp:(nonnull AuthPigeonFirebaseApp *)app
+              settings:(nonnull PigeonFirebaseAuthSettings *)settings
+            completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+
+  if (settings.userAccessGroup != nil) {
+    BOOL useUserAccessGroupSuccessful;
+    NSError *useUserAccessGroupErrorPtr;
+    useUserAccessGroupSuccessful = [auth useUserAccessGroup:settings.userAccessGroup
+                                                      error:&useUserAccessGroupErrorPtr];
+    if (!useUserAccessGroupSuccessful) {
+      completion([FLTFirebaseAuthPlugin convertToFlutterError:useUserAccessGroupErrorPtr]);
+      return;
+    }
+  }
+
+#if TARGET_OS_IPHONE
+  if (settings.appVerificationDisabledForTesting) {
+    auth.settings.appVerificationDisabledForTesting = settings.appVerificationDisabledForTesting;
+  }
+#else
+  NSLog(@"FIRAuthSettings.appVerificationDisabledForTesting is not supported "
+        @"on MacOS.");
+#endif
+
+  completion(nil);
+}
+
+- (void)signInAnonymouslyApp:(nonnull AuthPigeonFirebaseApp *)app
+                  completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                               FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
   [auth signInAnonymouslyWithCompletion:^(FIRAuthDataResult *authResult, NSError *error) {
     if (error != nil) {
-      result.error(nil, nil, nil, error);
+      completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
     } else {
-      result.success(authResult);
+      completion([PigeonParser getPigeonUserCredentialFromAuthResult:authResult
+                                                   authorizationCode:nil],
+                 nil);
     }
   }];
 }
 
-- (void)verifyPhoneNumber:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
+- (void)signInWithCredentialApp:(nonnull AuthPigeonFirebaseApp *)app
+                          input:(nonnull NSDictionary<NSString *, id> *)input
+                     completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                                  FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  [self
+      getFIRAuthCredentialFromArguments:input
+                                    app:app
+                             completion:^(FIRAuthCredential *credential, NSError *error) {
+                               if (credential == nil) {
+                                 completion(nil,
+                                            [FlutterError errorWithCode:kErrCodeInvalidCredential
+                                                                message:kErrMsgInvalidCredential
+                                                                details:nil]);
+                                 return;
+                               }
+
+                               if (error) {
+                                 completion(nil,
+                                            [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                               }
+
+                               [auth
+                                   signInWithCredential:credential
+                                             completion:^(FIRAuthDataResult *authResult,
+                                                          NSError *error) {
+                                               if (error != nil) {
+                                                 NSDictionary *userInfo = [error userInfo];
+                                                 NSError *underlyingError =
+                                                     [userInfo objectForKey:NSUnderlyingErrorKey];
+
+                                                 NSDictionary *firebaseDictionary =
+                                                     underlyingError
+                                                         .userInfo[@"FIRAuthErrorUserInfoDeserializ"
+                                                                   @"edResponseKey"];
+
+                                                 if (firebaseDictionary != nil &&
+                                                     firebaseDictionary[@"message"] != nil) {
+                                                   // error from firebase-ios-sdk is buried in
+                                                   // underlying error.
+                                                   if ([firebaseDictionary[@"code"]
+                                                           isKindOfClass:[NSNumber class]]) {
+                                                     [self handleInternalError:completion
+                                                                     withError:error];
+                                                   } else {
+                                                     completion(nil,
+                                                                [FlutterError
+                                                                    errorWithCode:firebaseDictionary
+                                                                                      [@"code"]
+                                                                          message:firebaseDictionary
+                                                                                      [@"message"]
+                                                                          details:nil]);
+                                                   }
+                                                 } else {
+                                                   if (error.code ==
+                                                       FIRAuthErrorCodeSecondFactorRequired) {
+                                                     [self handleMultiFactorError:app
+                                                                       completion:completion
+                                                                        withError:error];
+                                                   } else if (error.code ==
+                                                              FIRAuthErrorCodeInternalError) {
+                                                     [self handleInternalError:completion
+                                                                     withError:error];
+                                                   } else {
+                                                     completion(nil,
+                                                                [FLTFirebaseAuthPlugin
+                                                                    convertToFlutterError:error]);
+                                                   }
+                                                 }
+                                               } else {
+                                                 completion(
+                                                     [PigeonParser
+                                                         getPigeonUserCredentialFromAuthResult:
+                                                             authResult
+                                                                             authorizationCode:nil],
+                                                     nil);
+                                               }
+                                             }];
+                             }];
+}
+
+- (void)signInWithCustomTokenApp:(nonnull AuthPigeonFirebaseApp *)app
+                           token:(nonnull NSString *)token
+                      completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                                   FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+
+  [auth signInWithCustomToken:token
+                   completion:^(FIRAuthDataResult *_Nullable authResult, NSError *_Nullable error) {
+                     if (error != nil) {
+                       if (error.code == FIRAuthErrorCodeSecondFactorRequired) {
+                         [self handleMultiFactorError:app completion:completion withError:error];
+                       } else if (error.code == FIRAuthErrorCodeInternalError) {
+                         [self handleInternalError:completion withError:error];
+                       } else {
+                         completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                       }
+                     } else {
+                       completion([PigeonParser getPigeonUserCredentialFromAuthResult:authResult
+                                                                    authorizationCode:nil],
+                                  nil);
+                     }
+                   }];
+}
+
+- (void)signInWithEmailAndPasswordApp:(nonnull AuthPigeonFirebaseApp *)app
+                                email:(nonnull NSString *)email
+                             password:(nonnull NSString *)password
+                           completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                                        FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  [auth signInWithEmail:email
+               password:password
+             completion:^(FIRAuthDataResult *_Nullable authResult, NSError *_Nullable error) {
+               if (error != nil) {
+                 if (error.code == FIRAuthErrorCodeSecondFactorRequired) {
+                   [self handleMultiFactorError:app completion:completion withError:error];
+                 } else if (error.code == FIRAuthErrorCodeInternalError) {
+                   [self handleInternalError:completion withError:error];
+                 } else {
+                   completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                 }
+               } else {
+                 completion([PigeonParser getPigeonUserCredentialFromAuthResult:authResult
+                                                              authorizationCode:nil],
+                            nil);
+               }
+             }];
+}
+
+- (void)signInWithEmailLinkApp:(nonnull AuthPigeonFirebaseApp *)app
+                         email:(nonnull NSString *)email
+                     emailLink:(nonnull NSString *)emailLink
+                    completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                                 FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  [auth signInWithEmail:email
+                   link:emailLink
+             completion:^(FIRAuthDataResult *_Nullable authResult, NSError *_Nullable error) {
+               if (error != nil) {
+                 if (error.code == FIRAuthErrorCodeSecondFactorRequired) {
+                   [self handleMultiFactorError:app completion:completion withError:error];
+                 } else if (error.code == FIRAuthErrorCodeInternalError) {
+                   [self handleInternalError:completion withError:error];
+                 } else {
+                   completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                 }
+               } else {
+                 completion([PigeonParser getPigeonUserCredentialFromAuthResult:authResult
+                                                              authorizationCode:nil],
+                            nil);
+               }
+             }];
+}
+
+- (void)signInWithProviderApp:(nonnull AuthPigeonFirebaseApp *)app
+               signInProvider:(nonnull PigeonSignInProvider *)signInProvider
+                   completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                                FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+
+  if ([signInProvider.providerId isEqualToString:kSignInMethodGameCenter]) {
+    completion(
+        nil,
+        [FlutterError
+            errorWithCode:@"sign-in-failure"
+                  message:
+                      @"Game Center sign-in requires signing in with 'signInWithCredential()' API."
+                  details:@{}]);
+    return;
+  }
+
+  if ([signInProvider.providerId isEqualToString:kSignInMethodApple]) {
+    self.signInWithAppleAuth = auth;
+    launchAppleSignInRequest(self, app, signInProvider, completion);
+    return;
+  }
 #if TARGET_OS_OSX
-  NSLog(@"The Firebase Phone Authentication provider is not supported on the MacOS platform.");
-  result.success(nil);
+  NSLog(@"signInWithProvider is not supported on the "
+        @"MacOS platform.");
+  completion(nil, nil);
 #else
-  FIRAuth *auth = [self getFIRAuthFromArguments:arguments];
+  self.authProvider = [FIROAuthProvider providerWithProviderID:signInProvider.providerId auth:auth];
+  NSArray *scopes = signInProvider.scopes;
+  if (scopes != nil) {
+    [self.authProvider setScopes:scopes];
+  }
+  NSDictionary *customParameters = signInProvider.customParameters;
+  if (customParameters != nil) {
+    [self.authProvider setCustomParameters:customParameters];
+  }
+
+  [self.authProvider
+      getCredentialWithUIDelegate:nil
+                       completion:^(FIRAuthCredential *_Nullable credential,
+                                    NSError *_Nullable error) {
+                         handleAppleAuthResult(self, app, auth, credential, error, completion);
+                       }];
+#endif
+}
+
+- (void)signOutApp:(nonnull AuthPigeonFirebaseApp *)app
+        completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+
+  if (auth.currentUser == nil) {
+    completion(nil);
+    return;
+  }
+
+  NSError *signOutErrorPtr;
+  BOOL signOutSuccessful = [auth signOut:&signOutErrorPtr];
+
+  if (!signOutSuccessful) {
+    completion([FLTFirebaseAuthPlugin convertToFlutterError:signOutErrorPtr]);
+  } else {
+    completion(nil);
+  }
+}
+
+- (void)useEmulatorApp:(nonnull AuthPigeonFirebaseApp *)app
+                  host:(nonnull NSString *)host
+                  port:(long)port
+            completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  [auth useEmulatorWithHost:host port:port];
+  completion(nil);
+}
+
+- (void)verifyPasswordResetCodeApp:(nonnull AuthPigeonFirebaseApp *)app
+                              code:(nonnull NSString *)code
+                        completion:(nonnull void (^)(NSString *_Nullable,
+                                                     FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+
+  [auth verifyPasswordResetCode:code
+                     completion:^(NSString *_Nullable email, NSError *_Nullable error) {
+                       if (error != nil) {
+                         completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                       } else {
+                         completion(email, nil);
+                       }
+                     }];
+}
+
+- (void)verifyPhoneNumberApp:(nonnull AuthPigeonFirebaseApp *)app
+                     request:(nonnull PigeonVerifyPhoneNumberRequest *)request
+                  completion:
+                      (nonnull void (^)(NSString *_Nullable, FlutterError *_Nullable))completion {
+#if TARGET_OS_OSX
+  NSLog(@"The Firebase Phone Authentication provider is not supported on the "
+        @"MacOS platform.");
+  completion(nil, nil);
+#else
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
 
   NSString *name = [NSString
       stringWithFormat:@"%@/phone/%@", kFLTFirebaseAuthChannelName, [NSUUID UUID].UUIDString];
   FlutterEventChannel *channel = [FlutterEventChannel eventChannelWithName:name
                                                            binaryMessenger:_binaryMessenger];
 
+  NSString *multiFactorSessionId = request.multiFactorSessionId;
+  FIRMultiFactorSession *multiFactorSession = nil;
+
+  if (multiFactorSessionId != nil) {
+    multiFactorSession = _multiFactorSessionMap[multiFactorSessionId];
+  }
+
+  NSString *multiFactorInfoId = request.multiFactorInfoId;
+
+  FIRPhoneMultiFactorInfo *multiFactorInfo = nil;
+  if (multiFactorInfoId != nil) {
+    for (NSString *resolverId in _multiFactorResolverMap) {
+      for (FIRMultiFactorInfo *info in _multiFactorResolverMap[resolverId].hints) {
+        if ([info.UID isEqualToString:multiFactorInfoId] &&
+            [info class] == [FIRPhoneMultiFactorInfo class]) {
+          multiFactorInfo = (FIRPhoneMultiFactorInfo *)info;
+          break;
+        }
+      }
+    }
+  }
+
+#if TARGET_OS_OSX
   FLTPhoneNumberVerificationStreamHandler *handler =
-      [[FLTPhoneNumberVerificationStreamHandler alloc] initWithAuth:auth arguments:arguments];
+      [[FLTPhoneNumberVerificationStreamHandler alloc] initWithAuth:auth];
+#else
+  FLTPhoneNumberVerificationStreamHandler *handler =
+      [[FLTPhoneNumberVerificationStreamHandler alloc] initWithAuth:auth
+                                                            request:request
+                                                            session:multiFactorSession
+                                                         factorInfo:multiFactorInfo];
+#endif
+
   [channel setStreamHandler:handler];
 
   [_eventChannels setObject:channel forKey:name];
   [_streamHandlers setObject:handler forKey:name];
 
-  result.success(name);
+  completion(name, nil);
 #endif
 }
 
-#pragma mark - Utilities
-
-- (void)storeAuthCredentialIfPresent:(NSError *)error {
-  if ([error userInfo][FIRAuthErrorUserInfoUpdatedCredentialKey] != nil) {
-    FIRAuthCredential *authCredential = [error userInfo][FIRAuthErrorUserInfoUpdatedCredentialKey];
-    // We temporarily store the non-serializable credential so the
-    // Dart API can consume these at a later time.
-    NSNumber *authCredentialHash = @([authCredential hash]);
-    _credentials[authCredentialHash] = authCredential;
-  }
-}
-
-+ (NSDictionary *)getNSDictionaryFromNSError:(NSError *)error {
-  NSString *code = @"unknown";
-  NSString *message = @"An unknown error has occurred.";
-
-  if (error == nil) {
-    return @{
-      kArgumentCode : code,
-      @"message" : message,
-      @"additionalData" : @{},
-    };
+- (void)deleteApp:(nonnull AuthPigeonFirebaseApp *)app
+       completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion([FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                   message:kErrMsgNoCurrentUser
+                                   details:nil]);
+    return;
   }
 
-  // code
-  if ([error userInfo][FIRAuthErrorUserInfoNameKey] != nil) {
-    // See [FIRAuthErrorCodeString] for list of codes.
-    // Codes are in the format "ERROR_SOME_NAME", converting below to the format required in Dart.
-    // ERROR_SOME_NAME -> SOME_NAME
-    NSString *firebaseErrorCode = [error userInfo][FIRAuthErrorUserInfoNameKey];
-    code = [firebaseErrorCode stringByReplacingOccurrencesOfString:@"ERROR_" withString:@""];
-    // SOME_NAME -> SOME-NAME
-    code = [code stringByReplacingOccurrencesOfString:@"_" withString:@"-"];
-    // SOME-NAME -> some-name
-    code = [code lowercaseString];
-  }
-
-  // message
-  if ([error userInfo][NSLocalizedDescriptionKey] != nil) {
-    message = [error userInfo][NSLocalizedDescriptionKey];
-  }
-
-  NSMutableDictionary *additionalData = [NSMutableDictionary dictionary];
-  // additionalData.email
-  if ([error userInfo][FIRAuthErrorUserInfoEmailKey] != nil) {
-    additionalData[kArgumentEmail] = [error userInfo][FIRAuthErrorUserInfoEmailKey];
-  }
-  // additionalData.authCredential
-  if ([error userInfo][FIRAuthErrorUserInfoUpdatedCredentialKey] != nil) {
-    FIRAuthCredential *authCredential = [error userInfo][FIRAuthErrorUserInfoUpdatedCredentialKey];
-    additionalData[@"authCredential"] =
-        [FLTFirebaseAuthPlugin getNSDictionaryFromAuthCredential:authCredential];
-  }
-
-  // Manual message overrides to ensure messages/codes matche other platforms.
-  if ([message isEqual:@"The password must be 6 characters long or more."]) {
-    message = @"Password should be at least 6 characters";
-  }
-
-  return @{
-    kArgumentCode : code,
-    @"message" : message,
-    @"additionalData" : additionalData,
-  };
-}
-
-- (FIRAuth *_Nullable)getFIRAuthFromArguments:(NSDictionary *)arguments {
-  NSString *appNameDart = arguments[@"appName"];
-  NSString *tenantId = arguments[@"tenantId"];
-  FIRApp *app = [FLTFirebasePlugin firebaseAppNamed:appNameDart];
-  FIRAuth *auth = [FIRAuth authWithApp:app];
-
-  if (tenantId != nil && ![tenantId isEqual:[NSNull null]]) {
-    auth.tenantID = tenantId;
-  }
-
-  return auth;
-}
-
-- (FIRActionCodeSettings *_Nullable)getFIRActionCodeSettingsFromArguments:
-    (NSDictionary *)arguments {
-  NSDictionary *actionCodeSettingsDictionary = arguments[kArgumentActionCodeSettings];
-  if (actionCodeSettingsDictionary == nil || [actionCodeSettingsDictionary isEqual:[NSNull null]]) {
-    return nil;
-  }
-
-  FIRActionCodeSettings *actionCodeSettings = [FIRActionCodeSettings new];
-  NSDictionary *iOSSettings = actionCodeSettingsDictionary[@"iOS"];
-  NSDictionary *androidSettings = actionCodeSettingsDictionary[@"android"];
-
-  // URL - required
-  actionCodeSettings.URL = [NSURL URLWithString:actionCodeSettingsDictionary[@"url"]];
-
-  // Dynamic Link Domain - optional
-  if (actionCodeSettingsDictionary[@"dynamicLinkDomain"] != nil &&
-      ![actionCodeSettingsDictionary[@"dynamicLinkDomain"] isEqual:[NSNull null]]) {
-    actionCodeSettings.dynamicLinkDomain = actionCodeSettingsDictionary[@"dynamicLinkDomain"];
-  }
-
-  // Handle code in app - optional
-  if (actionCodeSettingsDictionary[@"handleCodeInApp"] != nil &&
-      ![actionCodeSettingsDictionary[@"handleCodeInApp"] isEqual:[NSNull null]]) {
-    actionCodeSettings.handleCodeInApp =
-        [actionCodeSettingsDictionary[@"handleCodeInApp"] boolValue];
-  }
-
-  // Android settings - optional
-  if (androidSettings != nil && ![androidSettings isEqual:[NSNull null]]) {
-    BOOL installIfNotAvailable = NO;
-    if (androidSettings[@"installApp"] != nil &&
-        ![androidSettings[@"installApp"] isEqual:[NSNull null]]) {
-      installIfNotAvailable = [androidSettings[@"installApp"] boolValue];
+  [currentUser deleteWithCompletion:^(NSError *_Nullable error) {
+    if (error != nil) {
+      completion([FLTFirebaseAuthPlugin convertToFlutterError:error]);
+    } else {
+      completion(nil);
     }
-    [actionCodeSettings setAndroidPackageName:androidSettings[@"packageName"]
-                        installIfNotAvailable:installIfNotAvailable
-                               minimumVersion:androidSettings[@"minimumVersion"]];
-  }
-
-  // iOS settings - optional
-  if (iOSSettings != nil && ![iOSSettings isEqual:[NSNull null]]) {
-    if (iOSSettings[@"bundleId"] != nil && ![iOSSettings[@"bundleId"] isEqual:[NSNull null]]) {
-      [actionCodeSettings setIOSBundleID:iOSSettings[@"bundleId"]];
-    }
-  }
-
-  return actionCodeSettings;
+  }];
 }
 
-- (FIRAuthCredential *_Nullable)getFIRAuthCredentialFromArguments:(NSDictionary *)arguments {
-  NSDictionary *credentialDictionary = arguments[kArgumentCredential];
-
-  // If the credential dictionary contains a token, it means a native one has been stored for later
-  // usage, so we'll attempt to retrieve it here.
-  if (credentialDictionary[kArgumentToken] != nil &&
-      ![credentialDictionary[kArgumentToken] isEqual:[NSNull null]]) {
-    NSNumber *credentialHashCode = credentialDictionary[kArgumentToken];
-    return _credentials[credentialHashCode];
+- (void)getIdTokenApp:(nonnull AuthPigeonFirebaseApp *)app
+         forceRefresh:(BOOL)forceRefresh
+           completion:(nonnull void (^)(PigeonIdTokenResult *_Nullable,
+                                        FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion(nil, [FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                        message:kErrMsgNoCurrentUser
+                                        details:nil]);
+    return;
   }
 
-  NSString *signInMethod = credentialDictionary[kArgumentSignInMethod];
-  NSString *secret = credentialDictionary[kArgumentSecret] == [NSNull null]
-                         ? nil
-                         : credentialDictionary[kArgumentSecret];
-  NSString *idToken = credentialDictionary[kArgumentIdToken] == [NSNull null]
-                          ? nil
-                          : credentialDictionary[kArgumentIdToken];
-  NSString *accessToken = credentialDictionary[kArgumentAccessToken] == [NSNull null]
-                              ? nil
-                              : credentialDictionary[kArgumentAccessToken];
-  NSString *rawNonce = credentialDictionary[kArgumentRawNonce] == [NSNull null]
-                           ? nil
-                           : credentialDictionary[kArgumentRawNonce];
+  [currentUser
+      getIDTokenResultForcingRefresh:forceRefresh
+                          completion:^(FIRAuthTokenResult *tokenResult, NSError *error) {
+                            if (error != nil) {
+                              completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                              return;
+                            }
 
-  // Password Auth
-  if ([signInMethod isEqualToString:kSignInMethodPassword]) {
-    NSString *email = credentialDictionary[kArgumentEmail];
-    return [FIREmailAuthProvider credentialWithEmail:email password:secret];
+                            completion([PigeonParser parseIdTokenResult:tokenResult], nil);
+                          }];
+}
+
+- (void)linkWithCredentialApp:(nonnull AuthPigeonFirebaseApp *)app
+                        input:(nonnull NSDictionary<NSString *, id> *)input
+                   completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                                FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion(nil, [FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                        message:kErrMsgNoCurrentUser
+                                        details:nil]);
+    return;
   }
 
-  // Email Link Auth
-  if ([signInMethod isEqualToString:kSignInMethodEmailLink]) {
-    NSString *email = credentialDictionary[kArgumentEmail];
-    NSString *emailLink = credentialDictionary[kArgumentEmailLink];
-    return [FIREmailAuthProvider credentialWithEmail:email link:emailLink];
+  [self
+      getFIRAuthCredentialFromArguments:input
+                                    app:app
+                             completion:^(FIRAuthCredential *credential, NSError *error) {
+                               if (credential == nil) {
+                                 completion(nil,
+                                            [FlutterError errorWithCode:kErrCodeInvalidCredential
+                                                                message:kErrMsgInvalidCredential
+                                                                details:nil]);
+                                 return;
+                               }
+
+                               if (error) {
+                                 completion(nil,
+                                            [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                               }
+
+                               [currentUser
+                                   linkWithCredential:credential
+                                           completion:^(FIRAuthDataResult *authResult,
+                                                        NSError *error) {
+                                             if (error != nil) {
+                                               if (error.code ==
+                                                   FIRAuthErrorCodeSecondFactorRequired) {
+                                                 [self handleMultiFactorError:app
+                                                                   completion:completion
+                                                                    withError:error];
+                                               } else {
+                                                 completion(nil, [FLTFirebaseAuthPlugin
+                                                                     convertToFlutterError:error]);
+                                               }
+                                             } else {
+                                               completion(
+                                                   [PigeonParser
+                                                       getPigeonUserCredentialFromAuthResult:
+                                                           authResult
+                                                                           authorizationCode:nil],
+                                                   nil);
+                                             }
+                                           }];
+                             }];
+}
+
+- (void)linkWithProviderApp:(nonnull AuthPigeonFirebaseApp *)app
+             signInProvider:(nonnull PigeonSignInProvider *)signInProvider
+                 completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                              FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if ([signInProvider.providerId isEqualToString:kSignInMethodGameCenter]) {
+    completion(
+        nil,
+        [FlutterError
+            errorWithCode:@"provider-link-failure"
+                  message:@"Game Center provider requires linking with 'linkWithCredential()' API."
+                  details:@{}]);
+    return;
   }
 
-  // Facebook Auth
-  if ([signInMethod isEqualToString:kSignInMethodFacebook]) {
-    return [FIRFacebookAuthProvider credentialWithAccessToken:accessToken];
+  if (currentUser == nil) {
+    completion(nil, [FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                        message:kErrMsgNoCurrentUser
+                                        details:nil]);
+    return;
   }
 
-  // Google Auth
-  if ([signInMethod isEqualToString:kSignInMethodGoogle]) {
-    return [FIRGoogleAuthProvider credentialWithIDToken:idToken accessToken:accessToken];
+  if ([signInProvider.providerId isEqualToString:kSignInMethodApple]) {
+    self.linkWithAppleUser = currentUser;
+    launchAppleSignInRequest(self, app, signInProvider, completion);
+    return;
   }
-
-  // Twitter Auth
-  if ([signInMethod isEqualToString:kSignInMethodTwitter]) {
-    return [FIRTwitterAuthProvider credentialWithToken:accessToken secret:secret];
-  }
-
-  // GitHub Auth
-  if ([signInMethod isEqualToString:kSignInMethodGithub]) {
-    return [FIRGitHubAuthProvider credentialWithToken:accessToken];
-  }
-
-  // Phone Auth - Only supported on iOS
-  if ([signInMethod isEqualToString:kSignInMethodPhone]) {
-#if TARGET_OS_IPHONE
-    NSString *verificationId = credentialDictionary[kArgumentVerificationId];
-    NSString *smsCode = credentialDictionary[kArgumentSmsCode];
-    return [[FIRPhoneAuthProvider providerWithAuth:[self getFIRAuthFromArguments:arguments]]
-        credentialWithVerificationID:verificationId
-                    verificationCode:smsCode];
+#if TARGET_OS_OSX
+  NSLog(@"linkWithProvider is not supported on the "
+        @"MacOS platform.");
+  completion(nil, nil);
 #else
-    NSLog(@"The Firebase Phone Authentication provider is not supported on the MacOS platform.");
-    return nil;
+  self.authProvider = [FIROAuthProvider providerWithProviderID:signInProvider.providerId];
+  NSArray *scopes = signInProvider.scopes;
+  if (scopes != nil) {
+    [self.authProvider setScopes:scopes];
+  }
+  NSDictionary *customParameters = signInProvider.customParameters;
+  if (customParameters != nil) {
+    [self.authProvider setCustomParameters:customParameters];
+  }
+
+  [currentUser
+      linkWithProvider:self.authProvider
+            UIDelegate:nil
+            completion:^(FIRAuthDataResult *authResult, NSError *error) {
+              handleAppleAuthResult(self, app, auth, authResult.credential, error, completion);
+            }];
 #endif
-  }
-
-  // OAuth
-  if ([signInMethod isEqualToString:kSignInMethodOAuth]) {
-    NSString *providerId = credentialDictionary[kArgumentProviderId];
-    return [FIROAuthProvider credentialWithProviderID:providerId
-                                              IDToken:idToken
-                                             rawNonce:rawNonce
-                                          accessToken:accessToken];
-  }
-
-  NSLog(@"Support for an auth provider with identifier '%@' is not implemented.", signInMethod);
-  return nil;
 }
 
-- (NSDictionary *)getNSDictionaryFromAuthResult:(FIRAuthDataResult *)authResult {
-  return @{
-    @"additionalUserInfo" :
-        [self getNSDictionaryFromAdditionalUserInfo:authResult.additionalUserInfo],
-    @"authCredential" :
-        [FLTFirebaseAuthPlugin getNSDictionaryFromAuthCredential:authResult.credential],
-    @"user" : [FLTFirebaseAuthPlugin getNSDictionaryFromUser:authResult.user],
-  };
+- (void)reauthenticateWithCredentialApp:(nonnull AuthPigeonFirebaseApp *)app
+                                  input:(nonnull NSDictionary<NSString *, id> *)input
+                             completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                                          FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion(nil, [FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                        message:kErrMsgNoCurrentUser
+                                        details:nil]);
+    return;
+  }
+
+  [self
+      getFIRAuthCredentialFromArguments:input
+                                    app:app
+                             completion:^(FIRAuthCredential *credential, NSError *error) {
+                               if (credential == nil) {
+                                 completion(nil,
+                                            [FlutterError errorWithCode:kErrCodeInvalidCredential
+                                                                message:kErrMsgInvalidCredential
+                                                                details:nil]);
+                                 return;
+                               }
+
+                               if (error) {
+                                 completion(nil,
+                                            [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                               }
+
+                               [currentUser
+                                   reauthenticateWithCredential:credential
+                                                     completion:^(FIRAuthDataResult *authResult,
+                                                                  NSError *error) {
+                                                       if (error != nil) {
+                                                         if (error.code ==
+                                                             FIRAuthErrorCodeSecondFactorRequired) {
+                                                           [self handleMultiFactorError:app
+                                                                             completion:completion
+                                                                              withError:error];
+                                                         } else {
+                                                           completion(
+                                                               nil,
+                                                               [FLTFirebaseAuthPlugin
+                                                                   convertToFlutterError:error]);
+                                                         }
+                                                       } else {
+                                                         completion(
+                                                             [PigeonParser
+                                                                 getPigeonUserCredentialFromAuthResult:
+                                                                     authResult
+                                                                                     authorizationCode:
+                                                                                         nil],
+                                                             nil);
+                                                       }
+                                                     }];
+                             }];
 }
 
-- (id)getNSDictionaryFromAdditionalUserInfo:(FIRAdditionalUserInfo *)additionalUserInfo {
-  if (additionalUserInfo == nil) {
-    return [NSNull null];
+- (void)reauthenticateWithProviderApp:(nonnull AuthPigeonFirebaseApp *)app
+                       signInProvider:(nonnull PigeonSignInProvider *)signInProvider
+                           completion:(nonnull void (^)(PigeonUserCredential *_Nullable,
+                                                        FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion(nil, [FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                        message:kErrMsgNoCurrentUser
+                                        details:nil]);
+    return;
   }
 
-  return @{
-    @"isNewUser" : @(additionalUserInfo.newUser),
-    @"profile" : (id)additionalUserInfo.profile ?: [NSNull null],
-    kArgumentProviderId : (id)additionalUserInfo.providerID ?: [NSNull null],
-    @"username" : (id)additionalUserInfo.username ?: [NSNull null],
-  };
+  if ([signInProvider.providerId isEqualToString:kSignInMethodApple]) {
+    self.isReauthenticatingWithApple = YES;
+    launchAppleSignInRequest(self, app, signInProvider, completion);
+    return;
+  }
+#if TARGET_OS_OSX
+  NSLog(@"reauthenticateWithProvider is not supported on the "
+        @"MacOS platform.");
+  completion(nil, nil);
+#else
+  self.authProvider = [FIROAuthProvider providerWithProviderID:signInProvider.providerId];
+  NSArray *scopes = signInProvider.scopes;
+  if (scopes != nil) {
+    [self.authProvider setScopes:scopes];
+  }
+  NSDictionary *customParameters = signInProvider.customParameters;
+  if (customParameters != nil) {
+    [self.authProvider setCustomParameters:customParameters];
+  }
+
+  [currentUser reauthenticateWithProvider:self.authProvider
+                               UIDelegate:nil
+                               completion:^(FIRAuthDataResult *authResult, NSError *error) {
+                                 handleAppleAuthResult(self, app, auth, authResult.credential,
+                                                       error, completion);
+                               }];
+#endif
 }
 
-+ (id)getNSDictionaryFromAuthCredential:(FIRAuthCredential *)authCredential {
-  if (authCredential == nil) {
-    return [NSNull null];
+- (void)reloadApp:(nonnull AuthPigeonFirebaseApp *)app
+       completion:
+           (nonnull void (^)(PigeonUserDetails *_Nullable, FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion(nil, [FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                        message:kErrMsgNoCurrentUser
+                                        details:nil]);
+    return;
   }
 
-  return @{
-    kArgumentProviderId : authCredential.provider,
-    // Note: "signInMethod" does not exist on iOS SDK, so using provider instead.
-    kArgumentSignInMethod : authCredential.provider,
-    kArgumentToken : @([authCredential hash]),
-  };
+  [currentUser reloadWithCompletion:^(NSError *_Nullable error) {
+    if (error != nil) {
+      completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+    } else {
+      completion([PigeonParser getPigeonDetails:auth.currentUser], nil);
+    }
+  }];
 }
 
-+ (NSDictionary *)getNSDictionaryFromUserInfo:(id<FIRUserInfo>)userInfo {
-  NSString *photoURL = nil;
-  if (userInfo.photoURL != nil) {
-    photoURL = userInfo.photoURL.absoluteString;
-    if ([photoURL length] == 0) photoURL = nil;
+- (void)sendEmailVerificationApp:(nonnull AuthPigeonFirebaseApp *)app
+              actionCodeSettings:(nullable PigeonActionCodeSettings *)actionCodeSettings
+                      completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion([FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                   message:kErrMsgNoCurrentUser
+                                   details:nil]);
+    return;
   }
-  return @{
-    kArgumentProviderId : userInfo.providerID,
-    @"displayName" : (id)userInfo.displayName ?: [NSNull null],
-    @"uid" : (id)userInfo.uid ?: [NSNull null],
-    @"photoURL" : (id)photoURL ?: [NSNull null],
-    kArgumentEmail : (id)userInfo.email ?: [NSNull null],
-    @"phoneNumber" : (id)userInfo.phoneNumber ?: [NSNull null],
-  };
+
+  [currentUser
+      sendEmailVerificationWithActionCodeSettings:[PigeonParser
+                                                      parseActionCodeSettings:actionCodeSettings]
+
+                                       completion:^(NSError *_Nullable error) {
+                                         if (error != nil) {
+                                           completion(
+                                               [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                                         } else {
+                                           completion(nil);
+                                         }
+                                       }];
 }
 
-+ (NSMutableDictionary *)getNSDictionaryFromUser:(FIRUser *)user {
-  // FIRUser inherits from FIRUserInfo, so we can re-use `getNSDictionaryFromUserInfo` method.
-  NSMutableDictionary *userData = [[self getNSDictionaryFromUserInfo:user] mutableCopy];
-  NSMutableDictionary *metadata = [NSMutableDictionary dictionary];
-
-  // This code is necessary to avoid an iOS issue where when unlinking the `password` provider
-  // the previous email still remains on the currentUser.
-  if ([user.providerData count] == 0) {
-    userData[@"email"] = [NSNull null];
+- (void)unlinkApp:(nonnull AuthPigeonFirebaseApp *)app
+       providerId:(nonnull NSString *)providerId
+       completion:
+           (nonnull void (^)(PigeonUserCredential *_Nullable, FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion(nil, [FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                        message:kErrMsgNoCurrentUser
+                                        details:nil]);
+    return;
   }
 
-  // metadata.creationTimestamp as milliseconds
-  long creationDate = (long)([user.metadata.creationDate timeIntervalSince1970] * 1000);
-  metadata[@"creationTime"] = @(creationDate);
+  [currentUser unlinkFromProvider:providerId
+                       completion:^(FIRUser *_Nullable user, NSError *_Nullable error) {
+                         if (error != nil) {
+                           completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                         } else {
+                           completion([PigeonParser getPigeonUserCredentialFromFIRUser:user], nil);
+                         }
+                       }];
+}
 
-  // metadata.lastSignInTimestamp as milliseconds
-  long lastSignInDate = (long)([user.metadata.lastSignInDate timeIntervalSince1970] * 1000);
-  metadata[@"lastSignInTime"] = @(lastSignInDate);
-
-  // metadata
-  userData[@"metadata"] = metadata;
-
-  // providerData
-  NSMutableArray<NSDictionary<NSString *, NSString *> *> *providerData =
-      [NSMutableArray arrayWithCapacity:user.providerData.count];
-  for (id<FIRUserInfo> userInfo in user.providerData) {
-    [providerData addObject:[FLTFirebaseAuthPlugin getNSDictionaryFromUserInfo:userInfo]];
-  }
-  userData[@"providerData"] = providerData;
-
-  userData[@"isAnonymous"] = @(user.isAnonymous);
-  userData[@"emailVerified"] = @(user.isEmailVerified);
-
-  if (user.tenantID != nil) {
-    userData[@"tenantId"] = user.tenantID;
-  } else {
-    userData[@"tenantId"] = [NSNull null];
+- (void)updateEmailApp:(nonnull AuthPigeonFirebaseApp *)app
+              newEmail:(nonnull NSString *)newEmail
+            completion:(nonnull void (^)(PigeonUserDetails *_Nullable,
+                                         FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion(nil, [FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                        message:kErrMsgNoCurrentUser
+                                        details:nil]);
+    return;
   }
 
-  // native does not provide refresh tokens
-  userData[@"refreshToken"] = @"";
-  return userData;
+  [currentUser updateEmail:newEmail
+                completion:^(NSError *_Nullable error) {
+                  if (error != nil) {
+                    completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                  } else {
+                    [currentUser reloadWithCompletion:^(NSError *_Nullable reloadError) {
+                      if (reloadError != nil) {
+                        completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:reloadError]);
+                      } else {
+                        completion([PigeonParser getPigeonDetails:auth.currentUser], nil);
+                      }
+                    }];
+                  }
+                }];
+}
+
+- (void)updatePasswordApp:(nonnull AuthPigeonFirebaseApp *)app
+              newPassword:(nonnull NSString *)newPassword
+               completion:(nonnull void (^)(PigeonUserDetails *_Nullable,
+                                            FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion(nil, [FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                        message:kErrMsgNoCurrentUser
+                                        details:nil]);
+    return;
+  }
+
+  [currentUser
+      updatePassword:newPassword
+          completion:^(NSError *_Nullable error) {
+            if (error != nil) {
+              completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+            } else {
+              [currentUser reloadWithCompletion:^(NSError *_Nullable reloadError) {
+                if (reloadError != nil) {
+                  completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:reloadError]);
+                } else {
+                  completion([PigeonParser getPigeonDetails:auth.currentUser], nil);
+                }
+              }];
+            }
+          }];
+}
+
+- (void)updatePhoneNumberApp:(nonnull AuthPigeonFirebaseApp *)app
+                       input:(nonnull NSDictionary<NSString *, id> *)input
+                  completion:(nonnull void (^)(PigeonUserDetails *_Nullable,
+                                               FlutterError *_Nullable))completion {
+#if TARGET_OS_IPHONE
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion(nil, [FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                        message:kErrMsgNoCurrentUser
+                                        details:nil]);
+    return;
+  }
+
+  [self
+      getFIRAuthCredentialFromArguments:input
+                                    app:app
+                             completion:^(FIRAuthCredential *credential, NSError *error) {
+                               if (credential == nil) {
+                                 completion(nil,
+                                            [FlutterError errorWithCode:kErrCodeInvalidCredential
+                                                                message:kErrMsgInvalidCredential
+                                                                details:nil]);
+                                 return;
+                               }
+
+                               if (error) {
+                                 completion(nil,
+                                            [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                               }
+
+                               [currentUser
+                                   updatePhoneNumberCredential:(FIRPhoneAuthCredential *)credential
+                                                    completion:^(NSError *_Nullable error) {
+                                                      if (error != nil) {
+                                                        completion(
+                                                            nil, [FLTFirebaseAuthPlugin
+                                                                     convertToFlutterError:error]);
+                                                      } else {
+                                                        [currentUser
+                                                            reloadWithCompletion:^(
+                                                                NSError *_Nullable reloadError) {
+                                                              if (reloadError != nil) {
+                                                                completion(
+                                                                    nil, [FLTFirebaseAuthPlugin
+                                                                             convertToFlutterError:
+                                                                                 reloadError]);
+                                                              } else {
+                                                                completion(
+                                                                    [PigeonParser
+                                                                        getPigeonDetails:
+                                                                            auth.currentUser],
+                                                                    nil);
+                                                              }
+                                                            }];
+                                                      }
+                                                    }];
+                             }];
+#else
+  NSLog(@"Updating a users phone number via Firebase Authentication is only "
+        @"supported on the iOS "
+        @"platform.");
+  completion(nil, nil);
+#endif
+}
+
+- (void)updateProfileApp:(nonnull AuthPigeonFirebaseApp *)app
+                 profile:(nonnull PigeonUserProfile *)profile
+              completion:(nonnull void (^)(PigeonUserDetails *_Nullable,
+                                           FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion(nil, [FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                        message:kErrMsgNoCurrentUser
+                                        details:nil]);
+    return;
+  }
+
+  FIRUserProfileChangeRequest *changeRequest = [currentUser profileChangeRequest];
+
+  if (profile.displayNameChanged) {
+    changeRequest.displayName = profile.displayName;
+  }
+
+  if (profile.photoUrlChanged) {
+    if (profile.photoUrl == nil) {
+      // We apparently cannot set photoURL to nil/NULL to remove it.
+      // Instead, setting it to empty string appears to work.
+      // When doing so, Dart will properly receive `null` anyway.
+      changeRequest.photoURL = [NSURL URLWithString:@""];
+    } else {
+      changeRequest.photoURL = [NSURL URLWithString:profile.photoUrl];
+    }
+  }
+
+  [changeRequest commitChangesWithCompletion:^(NSError *error) {
+    if (error != nil) {
+      completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+    } else {
+      [currentUser reloadWithCompletion:^(NSError *_Nullable reloadError) {
+        if (reloadError != nil) {
+          completion(nil, [FLTFirebaseAuthPlugin convertToFlutterError:reloadError]);
+        } else {
+          completion([PigeonParser getPigeonDetails:auth.currentUser], nil);
+        }
+      }];
+    }
+  }];
+}
+
+- (void)verifyBeforeUpdateEmailApp:(nonnull AuthPigeonFirebaseApp *)app
+                          newEmail:(nonnull NSString *)newEmail
+                actionCodeSettings:(nullable PigeonActionCodeSettings *)actionCodeSettings
+                        completion:(nonnull void (^)(FlutterError *_Nullable))completion {
+  FIRAuth *auth = [self getFIRAuthFromAppNameFromPigeon:app];
+  FIRUser *currentUser = auth.currentUser;
+  if (currentUser == nil) {
+    completion([FlutterError errorWithCode:kErrCodeNoCurrentUser
+                                   message:kErrMsgNoCurrentUser
+                                   details:nil]);
+    return;
+  }
+
+  [currentUser
+      sendEmailVerificationBeforeUpdatingEmail:newEmail
+                            actionCodeSettings:[PigeonParser
+                                                   parseActionCodeSettings:actionCodeSettings]
+                                    completion:^(NSError *error) {
+                                      if (error != nil) {
+                                        completion(
+                                            [FLTFirebaseAuthPlugin convertToFlutterError:error]);
+                                      } else {
+                                        completion(nil);
+                                      }
+                                    }];
 }
 
 @end

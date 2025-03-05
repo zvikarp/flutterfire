@@ -1,3 +1,9 @@
+/*
+ * Copyright 2022, the Chromium project authors.  Please see the AUTHORS file
+ * for details. All rights reserved. Use of this source code is governed by a
+ * BSD-style license that can be found in the LICENSE file.
+ */
+
 //
 //  FLTLoadBundleStreamHandler.h
 //  Pods
@@ -19,6 +25,11 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @interface FLTLoadBundleStreamHandler : NSObject <FlutterStreamHandler>
+@property(nonatomic, strong) FIRFirestore *firestore;
+@property(nonatomic, strong) FlutterStandardTypedData *bundle;
+
+- (instancetype)initWithFirestore:(FIRFirestore *)firestore
+                           bundle:(FlutterStandardTypedData *)bundle;
 
 @end
 

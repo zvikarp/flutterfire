@@ -31,8 +31,8 @@ abstract class DocumentReferencePlatform extends PlatformInterface {
   /// This is used by the app-facing [DocumentReference] to ensure that
   /// the object in which it's going to delegate calls has been
   /// constructed properly.
-  static void verifyExtends(DocumentReferencePlatform instance) {
-    PlatformInterface.verifyToken(instance, _token);
+  static void verify(DocumentReferencePlatform instance) {
+    PlatformInterface.verify(instance, _token);
   }
 
   /// The Firestore instance associated with this document reference
@@ -71,8 +71,10 @@ abstract class DocumentReferencePlatform extends PlatformInterface {
   }
 
   /// Notifies of documents at this location
-  Stream<DocumentSnapshotPlatform> snapshots(
-      {bool includeMetadataChanges = false}) {
+  Stream<DocumentSnapshotPlatform> snapshots({
+    bool includeMetadataChanges = false,
+    ListenSource source = ListenSource.defaultSource,
+  }) {
     throw UnimplementedError('snapshots() is not implemented');
   }
 
@@ -92,7 +94,7 @@ abstract class DocumentReferencePlatform extends PlatformInterface {
   /// special sentinel [FieldValuePlatform] type.
   ///
   /// If no document exists yet, the update will fail.
-  Future<void> update(Map<String, dynamic> data) {
+  Future<void> update(Map<FieldPath, dynamic> data) {
     throw UnimplementedError('update() is not implemented');
   }
 

@@ -3,19 +3,18 @@
 // found in the LICENSE file.
 
 import 'dart:async';
+import 'dart:js_interop';
 
 import 'package:firebase_core_web/firebase_core_web_interop.dart';
-import 'package:js/js.dart';
 
-import 'firebase_interop.dart' as firebase_interop;
 import 'installations_interop.dart' as installations_interop;
 
 export 'installations_interop.dart';
 
 Installations getInstallationsInstance([App? app]) {
   return Installations.getInstance(app != null
-      ? firebase_interop.installations(app.jsObject)
-      : firebase_interop.installations());
+      ? installations_interop.getInstallations(app.jsObject)
+      : installations_interop.getInstallations());
 }
 
 class Installations
@@ -28,34 +27,38 @@ class Installations
     return _expando[jsObject] ??= Installations._fromJsObject(jsObject);
   }
 
-  Installations._fromJsObject(
-      installations_interop.InstallationsJsImpl jsObject)
-      : super.fromJsObject(jsObject);
+  Installations._fromJsObject(super.jsObject) : super.fromJsObject();
 
-  Future<void> delete() => handleThenable(jsObject.delete());
+  Future<void> delete() =>
+      (installations_interop.deleteInstallations(jsObject)).toDart;
 
-  Future<String> getId() => handleThenable(jsObject.getId());
+  Future<String> getId() => (installations_interop.getId(jsObject))
+      .toDart
+      .then((value) => value! as String);
 
   Future<String> getToken([bool forceRefresh = false]) =>
-      handleThenable(jsObject.getToken(forceRefresh));
+      (installations_interop.getToken(jsObject, forceRefresh.toJS))
+          .toDart
+          .then((value) => value! as String);
 
-  Func0? _onIdChangedUnsubscribe;
+  JSFunction? _onIdChangedUnsubscribe;
 
   StreamController<String>? _idChangeController;
 
   Stream<String> get onIdChange {
     if (_idChangeController == null) {
-      final wrapper = allowInterop((String id) {
+      final wrapper = ((String id) {
         _idChangeController!.add(id);
-      });
+      }).toJS;
 
       void startListen() {
         assert(_onIdChangedUnsubscribe == null);
-        _onIdChangedUnsubscribe = jsObject.onIdChange(wrapper);
+        _onIdChangedUnsubscribe =
+            installations_interop.onIdChange(jsObject, wrapper);
       }
 
       void stopListen() {
-        _onIdChangedUnsubscribe!();
+        _onIdChangedUnsubscribe?.callAsFunction();
         _onIdChangedUnsubscribe = null;
       }
 

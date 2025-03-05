@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,8 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_database/ui/firebase_animated_list.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+
+import 'firebase_options.dart';
 
 // Change to false to use live database instance.
 const USE_DATABASE_EMULATOR = true;
@@ -25,14 +27,7 @@ final emulatorHost =
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
-    options: const FirebaseOptions(
-      apiKey: 'AIzaSyAHAsf51D0A407EklG1bs-5wA7EbyfNFg0',
-      appId: '1:448618578101:ios:2bc5c1fe2ec336f8ac3efc',
-      messagingSenderId: '448618578101',
-      projectId: 'react-native-firebase-testing',
-      databaseURL: 'https://react-native-firebase-testing.firebaseio.com',
-      storageBucket: 'react-native-firebase-testing.appspot.com',
-    ),
+    options: DefaultFirebaseOptions.currentPlatform,
   );
 
   if (USE_DATABASE_EMULATOR) {
@@ -158,7 +153,7 @@ class _MyHomePageState extends State<MyHomePage> {
       if (transactionResult.committed) {
         final newMessageRef = _messagesRef.push();
         await newMessageRef.set(<String, String>{
-          _kTestKey: '$_kTestValue ${transactionResult.snapshot.value}'
+          _kTestKey: '$_kTestValue ${transactionResult.snapshot.value}',
         });
       }
     } on FirebaseException catch (e) {
@@ -227,7 +222,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       onPressed: () => _deleteMessage(snapshot),
                       icon: const Icon(Icons.delete),
                     ),
-                    title: Text('$index: ${snapshot.value.toString()}'),
+                    title: Text('$index: ${snapshot.value}'),
                   ),
                 );
               },

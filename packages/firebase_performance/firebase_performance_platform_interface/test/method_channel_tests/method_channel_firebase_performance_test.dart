@@ -41,10 +41,6 @@ void main() {
             return true;
           case 'FirebasePerformance#setPerformanceCollectionEnabled':
             return call.arguments['enable'];
-          case 'FirebasePerformance#newTrace':
-            return null;
-          case 'FirebasePerformance#newHttpMetric':
-            return null;
           default:
             return true;
         }
@@ -63,7 +59,6 @@ void main() {
   tearDown(() async {
     mockPlatformExceptionThrown = false;
     mockExceptionThrown = false;
-    MethodChannelFirebasePerformance.clearState();
   });
 
   test('instance', () {
@@ -87,8 +82,8 @@ void main() {
       expect(log, <Matcher>[
         isMethodCall(
           'FirebasePerformance#isPerformanceCollectionEnabled',
-          arguments: {'handle': 0},
-        )
+          arguments: null,
+        ),
       ]);
     });
 
@@ -111,8 +106,8 @@ void main() {
       expect(log, <Matcher>[
         isMethodCall(
           'FirebasePerformance#setPerformanceCollectionEnabled',
-          arguments: {'handle': 0, 'enable': true},
-        )
+          arguments: {'enable': true},
+        ),
       ]);
     });
 

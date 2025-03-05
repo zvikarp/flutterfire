@@ -45,14 +45,10 @@ void main() {
         expect(() => query!.where(123), throwsAssertionError);
       });
 
-      test('throws if multiple inequalities on different paths is provided',
-          () {
-        expect(
-          () => query!
-              .where('foo.bar', isGreaterThanOrEqualTo: 123)
-              .where('bar', isLessThan: 123),
-          throwsAssertionError,
-        );
+      test('allows multiple inequalities on different paths is provided', () {
+        query!
+            .where('foo.bar', isGreaterThanOrEqualTo: 123)
+            .where('bar', isLessThan: 123);
       });
 
       test('allows inequality on the same path', () {
@@ -61,74 +57,67 @@ void main() {
             .where('foo.bar', isGreaterThan: 1234);
       });
 
-      test('throws if inequality is different to first orderBy', () {
+      test('throw an exception when making query combining `in` & `not-in`',
+          () {
         expect(
-          () => query!.where('foo', isGreaterThan: 123).orderBy('bar'),
-          throwsAssertionError,
-        );
-        expect(
-          () => query!.orderBy('bar').where('foo', isGreaterThan: 123),
-          throwsAssertionError,
-        );
-        expect(
-          () => query!
-              .where('foo', isGreaterThan: 123)
-              .orderBy('bar')
-              .orderBy('foo'),
-          throwsAssertionError,
-        );
-        expect(
-          () => query!
-              .orderBy('bar')
-              .orderBy('foo')
-              .where('foo', isGreaterThan: 123),
+          () => query!.where('number', whereIn: [1, 2], whereNotIn: [3, 4]),
           throwsAssertionError,
         );
 
         expect(
-          () => query!
-              .where(FieldPath.documentId, whereNotIn: ['bar']).orderBy('foo'),
-          throwsAssertionError,
-        );
-        expect(
-          () =>
-              query!.where(FieldPath.documentId, isLessThan: 3).orderBy('foo'),
-          throwsAssertionError,
-        );
-        expect(
-          () => query!
-              .where(FieldPath.documentId, isGreaterThan: 3)
-              .orderBy('foo'),
+          () => query!.where('number', whereIn: [1, 2]).where(
+            'number',
+            whereNotIn: [3, 4],
+          ),
           throwsAssertionError,
         );
 
         expect(
-          () => query!.where('foo', whereNotIn: ['bar']).orderBy('baz'),
-          throwsAssertionError,
-        );
-        expect(
-          () => query!.where('foo', isLessThan: 3).orderBy('bar'),
-          throwsAssertionError,
-        );
-        expect(
-          () => query!.where('foo', isGreaterThan: 3).orderBy('bar'),
+          () => query!.where('number', whereNotIn: [3, 4]).where(
+            'number',
+            whereIn: [1, 2],
+          ),
           throwsAssertionError,
         );
       });
 
-      test('throws if whereIn query length is greater than 10', () {
+      test('allows inequality  different to first orderBy', () {
+        query!.where('foo', isGreaterThan: 123).orderBy('bar');
+        query!.orderBy('bar').where('foo', isGreaterThan: 123);
+        query!.where('foo', isGreaterThan: 123).orderBy('bar').orderBy('foo');
+        query!.orderBy('bar').orderBy('foo').where('foo', isGreaterThan: 123);
+        query!.where(FieldPath.documentId, whereNotIn: ['bar']).orderBy('foo');
+        query!.where(FieldPath.documentId, isLessThan: 3).orderBy('foo');
+        query!.where(FieldPath.documentId, isGreaterThan: 3).orderBy('foo');
+        query!.where('foo', whereNotIn: ['bar']).orderBy('baz');
+        query!.where('foo', isLessThan: 3).orderBy('bar');
+        query!.where('foo', isGreaterThan: 3).orderBy('bar');
+      });
+
+      test('throws if whereIn query length is greater than 30', () {
+        List<int> numbers = List.generate(31, (i) => i + 1);
         expect(
-          () => query!
-              .where('foo.bar', whereIn: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
+          () => query!.where('foo.bar', whereIn: numbers),
           throwsAssertionError,
         );
       });
 
-      test('throws if arrayContainsAny query length is greater than 10', () {
+      test('throws if arrayContainsAny query length is greater than 30', () {
+        List<int> numbers = List.generate(31, (i) => i + 1);
         expect(
           () => query!.where(
             'foo',
-            arrayContainsAny: [1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9],
+            arrayContainsAny: numbers,
+          ),
+          throwsAssertionError,
+        );
+      });
+
+      test('throws if whereNotIn query length is greater than 10', () {
+        expect(
+          () => query!.where(
+            'foo',
+            whereNotIn: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
           ),
           throwsAssertionError,
         );
@@ -175,20 +164,6 @@ void main() {
         );
         expect(
           () => query!.where('foo', arrayContainsAny: [1]).where(
-            'foo',
-            arrayContainsAny: [2, 3],
-          ),
-          throwsAssertionError,
-        );
-        expect(
-          () => query!.where('foo', arrayContainsAny: [2, 3]).where(
-            'foo',
-            whereIn: [2, 3],
-          ),
-          throwsAssertionError,
-        );
-        expect(
-          () => query!.where('foo', whereIn: [2, 3]).where(
             'foo',
             arrayContainsAny: [2, 3],
           ),
@@ -296,7 +271,7 @@ void main() {
         expect(() => query!.endAt(['123']), throwsAssertionError);
         expect(
           () => query!.startAt([
-            FieldPath(const ['123'])
+            FieldPath(const ['123']),
           ]),
           throwsAssertionError,
         );
@@ -401,6 +376,37 @@ void main() {
             ),
           ),
         );
+      });
+    });
+
+    group('Settings()', () {
+      test('Test the assert for setting `cacheSizeBytes` minimum and maximum',
+          () {
+        void configureCache(int? cacheSizeBytes) {
+          assert(
+            cacheSizeBytes == null ||
+                cacheSizeBytes == Settings.CACHE_SIZE_UNLIMITED ||
+                (cacheSizeBytes >= 1048576 && cacheSizeBytes <= 104857600),
+            'Cache size, if specified, must be either CACHE_SIZE_UNLIMITED or between 1048576 bytes (inclusive) and 104857600 bytes (inclusive).',
+          );
+        }
+
+        // Happy paths
+        expect(() => configureCache(null), returnsNormally);
+        expect(
+          () => configureCache(Settings.CACHE_SIZE_UNLIMITED),
+          returnsNormally,
+        );
+        expect(() => configureCache(5000000), returnsNormally);
+        expect(() => configureCache(1048577), returnsNormally);
+        expect(() => configureCache(104857600), returnsNormally);
+        expect(() => configureCache(104857500), returnsNormally);
+
+        // Assertion triggers
+        expect(() => configureCache(1), throwsA(isA<AssertionError>()));
+        expect(() => configureCache(1000), throwsA(isA<AssertionError>()));
+        expect(() => configureCache(200000000), throwsA(isA<AssertionError>()));
+        expect(() => configureCache(500000), throwsA(isA<AssertionError>()));
       });
     });
   });

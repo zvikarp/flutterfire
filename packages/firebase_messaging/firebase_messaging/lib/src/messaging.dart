@@ -81,12 +81,15 @@ class FirebaseMessaging extends FirebasePluginPlatform {
   /// If the application has been opened from a terminated state via a [RemoteMessage]
   /// (containing a [Notification]), it will be returned, otherwise it will be `null`.
   ///
-  /// Once the [RemoteMesage] has been consumed, it will be removed and further
+  /// Once the [RemoteMessage] has been consumed, it will be removed and further
   /// calls to [getInitialMessage] will be `null`.
   ///
   /// This should be used to determine whether specific notification interaction
   /// should open the app with a specific purpose (e.g. opening a chat message,
   /// specific screen etc).
+  ///
+  /// on Android, if the message was received in the foreground, and the notification was
+  /// pressed whilst the app is in a background/terminated state, this will return `null`.
   Future<RemoteMessage?> getInitialMessage() {
     return _delegate.getInitialMessage();
   }
@@ -109,6 +112,8 @@ class FirebaseMessaging extends FirebasePluginPlatform {
   }
 
   /// Returns the default FCM token for this device.
+  ///
+  /// On web, a [vapidKey] is required.
   Future<String?> getToken({
     String? vapidKey,
   }) {
@@ -122,7 +127,7 @@ class FirebaseMessaging extends FirebasePluginPlatform {
     return _delegate.onTokenRefresh;
   }
 
-  bool isSupported() {
+  Future<bool> isSupported() {
     return _delegate.isSupported();
   }
 
@@ -201,6 +206,9 @@ class FirebaseMessaging extends FirebasePluginPlatform {
   }
 
   /// Send a new [RemoteMessage] to the FCM server. Android only.
+  /// Firebase will decommission in June 2024: https://firebase.google.com/docs/reference/android/com/google/firebase/messaging/FirebaseMessaging#send
+  @Deprecated(
+      'This will be removed in a future release. Firebase will decommission in June 2024')
   Future<void> sendMessage({
     String? to,
     Map<String, String>? data,
@@ -225,6 +233,15 @@ class FirebaseMessaging extends FirebasePluginPlatform {
   /// Enable or disable auto-initialization of Firebase Cloud Messaging.
   Future<void> setAutoInitEnabled(bool enabled) async {
     return _delegate.setAutoInitEnabled(enabled);
+  }
+
+  /// Enables or disables Firebase Cloud Messaging message delivery metrics export to BigQuery for Android.
+  ///
+  /// On iOS, you need to follow [this guide](https://firebase.google.com/docs/cloud-messaging/understand-delivery?platform=ios#enable_delivery_data_export_for_background_notifications)
+  /// in order to export metrics to BigQuery.
+  /// On Web, you need to setup a [service worker](https://firebase.google.com/docs/cloud-messaging/js/client) and call `experimentalSetDeliveryMetricsExportedToBigQueryEnabled(messaging, true)`
+  Future<void> setDeliveryMetricsExportToBigQuery(bool enabled) async {
+    return _delegate.setDeliveryMetricsExportToBigQuery(enabled);
   }
 
   /// Sets the presentation options for Apple notifications when received in

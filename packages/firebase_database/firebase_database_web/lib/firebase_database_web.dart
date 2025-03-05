@@ -2,32 +2,26 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-library firebase_database_web;
-
 import 'dart:async';
-import 'dart:js_util' as util;
-
+import 'dart:js_interop';
+import 'package:collection/collection.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_core_web/firebase_core_web.dart';
+import 'package:firebase_core_web/firebase_core_web_interop.dart'
+    as core_interop;
 import 'package:firebase_database_platform_interface/firebase_database_platform_interface.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 
 import 'src/interop/database.dart' as database_interop;
 
 part './src/data_snapshot_web.dart';
-
 part './src/database_event_web.dart';
-
 part './src/database_reference_web.dart';
-
 part './src/ondisconnect_web.dart';
-
 part './src/query_web.dart';
-
 part './src/transaction_result_web.dart';
-
 part './src/utils/exception.dart';
-
 part './src/utils/snapshot_utils.dart';
 
 /// Web implementation for [DatabasePlatform]
@@ -40,7 +34,7 @@ class FirebaseDatabaseWeb extends DatabasePlatform {
   database_interop.Database get _delegate {
     return _firebaseDatabase ??=
         _firebaseDatabase = database_interop.getDatabaseInstance(
-      database_interop.getApp(app?.name),
+      core_interop.app(app?.name),
       databaseURL,
     );
   }
@@ -53,8 +47,7 @@ class FirebaseDatabaseWeb extends DatabasePlatform {
 
   /// Builds an instance of [DatabaseWeb] with an optional [FirebaseApp] instance
   /// If [app] is null then the created instance will use the default [FirebaseApp]
-  FirebaseDatabaseWeb({FirebaseApp? app, String? databaseURL})
-      : super(app: app, databaseURL: databaseURL);
+  FirebaseDatabaseWeb({super.app, super.databaseURL});
 
   @override
   DatabasePlatform delegateFor(

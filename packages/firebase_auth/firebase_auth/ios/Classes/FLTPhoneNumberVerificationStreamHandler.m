@@ -8,27 +8,49 @@
 @implementation FLTPhoneNumberVerificationStreamHandler {
   FIRAuth *_auth;
   NSString *_phoneNumber;
+#if TARGET_OS_OSX
+#else
+  FIRMultiFactorSession *_session;
+  FIRPhoneMultiFactorInfo *_factorInfo;
+#endif
 }
 
-- (instancetype)initWithAuth:(id)auth arguments:(NSDictionary *)arguments {
+#if TARGET_OS_OSX
+- (instancetype)initWithAuth:(id)auth request:(PigeonVerifyPhoneNumberRequest *)request {
   self = [super init];
   if (self) {
     _auth = auth;
-    _phoneNumber = arguments[@"phoneNumber"];
+    _phoneNumber = request.phoneNumber;
   }
   return self;
 }
+#else
+- (instancetype)initWithAuth:(id)auth
+                     request:(PigeonVerifyPhoneNumberRequest *)request
+                     session:(FIRMultiFactorSession *)session
+                  factorInfo:(FIRPhoneMultiFactorInfo *)factorInfo {
+  self = [super init];
+  if (self) {
+    _auth = auth;
+    _phoneNumber = request.phoneNumber;
+    _session = session;
+    _factorInfo = factorInfo;
+  }
+  return self;
+}
+#endif
 
 - (FlutterError *)onListenWithArguments:(id)arguments eventSink:(FlutterEventSink)events {
 #if TARGET_OS_IPHONE
   id completer = ^(NSString *verificationID, NSError *error) {
     if (error != nil) {
-      NSDictionary *errorDetails = [FLTFirebaseAuthPlugin getNSDictionaryFromNSError:error];
+      FlutterError *errorDetails = [FLTFirebaseAuthPlugin convertToFlutterError:error];
       events(@{
         @"name" : @"Auth#phoneVerificationFailed",
         @"error" : @{
-          @"message" : errorDetails[@"message"],
-          @"details" : errorDetails,
+          @"code" : errorDetails.code,
+          @"message" : errorDetails.message,
+          @"details" : errorDetails.details,
         }
       });
     } else {
@@ -41,9 +63,19 @@
 
   // Try catch to capture 'missing URL scheme' error.
   @try {
-    [[FIRPhoneAuthProvider providerWithAuth:_auth] verifyPhoneNumber:_phoneNumber
-                                                          UIDelegate:nil
-                                                          completion:completer];
+    if (_factorInfo != nil) {
+      [[FIRPhoneAuthProvider providerWithAuth:_auth]
+          verifyPhoneNumberWithMultiFactorInfo:_factorInfo
+                                    UIDelegate:nil
+                            multiFactorSession:_session
+                                    completion:completer];
+
+    } else {
+      [[FIRPhoneAuthProvider providerWithAuth:_auth] verifyPhoneNumber:_phoneNumber
+                                                            UIDelegate:nil
+                                                    multiFactorSession:_session
+                                                            completion:completer];
+    }
   } @catch (NSException *exception) {
     events(@{
       @"name" : @"Auth#phoneVerificationFailed",

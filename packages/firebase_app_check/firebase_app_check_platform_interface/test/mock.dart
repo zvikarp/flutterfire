@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'package:firebase_app_check_platform_interface/firebase_app_check_platform_interface.dart';
 import 'package:firebase_app_check_platform_interface/src/method_channel/method_channel_firebase_app_check.dart';
 import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
-import 'package:firebase_app_check_platform_interface/firebase_app_check_platform_interface.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -16,39 +16,11 @@ final List<MethodCall> methodCallLog = <MethodCall>[];
 void setupFirebaseAppCheckMocks([Callback? customHandlers]) {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  MethodChannelFirebase.channel.setMockMethodCallHandler((call) async {
-    if (call.method == 'Firebase#initializeCore') {
-      return [
-        {
-          'name': defaultFirebaseAppName,
-          'options': {
-            'apiKey': '123',
-            'appId': '123',
-            'messagingSenderId': '123',
-            'projectId': '123',
-          },
-          'pluginConstants': {},
-        }
-      ];
-    }
+  setupFirebaseCoreMocks();
 
-    if (call.method == 'Firebase#initializeApp') {
-      return {
-        'name': call.arguments['appName'],
-        'options': call.arguments['options'],
-        'pluginConstants': {},
-      };
-    }
-
-    if (customHandlers != null) {
-      customHandlers(call);
-    }
-
-    return null;
-  });
-
-  MethodChannelFirebaseAppCheck.channel
-      .setMockMethodCallHandler((MethodCall methodCall) async {
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(MethodChannelFirebaseAppCheck.channel,
+          (MethodCall methodCall) async {
     methodCallLog.add(methodCall);
     switch (methodCall.method) {
       default:
@@ -58,7 +30,8 @@ void setupFirebaseAppCheckMocks([Callback? customHandlers]) {
 }
 
 void handleMethodCall(MethodCallCallback methodCallCallback) =>
-    MethodChannelFirebaseAppCheck.channel
-        .setMockMethodCallHandler((call) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(MethodChannelFirebaseAppCheck.channel,
+            (call) async {
       return await methodCallCallback(call);
     });

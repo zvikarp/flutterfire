@@ -46,7 +46,7 @@ abstract class Query<T extends Object?> {
   /// The [values] must be in order of [orderBy] filters.
   ///
   /// Calling this method will replace any existing cursor "end" query modifiers.
-  Query<T> endAt(List<Object?> values);
+  Query<T> endAt(Iterable<Object?> values);
 
   /// Creates and returns a new [Query] that ends before the provided document
   /// snapshot (exclusive). The end position is relative to the order of the query.
@@ -65,7 +65,7 @@ abstract class Query<T extends Object?> {
   /// The [values] must be in order of [orderBy] filters.
   ///
   /// Calling this method will replace any existing cursor "end" query modifiers.
-  Query<T> endBefore(List<Object?> values);
+  Query<T> endBefore(Iterable<Object?> values);
 
   /// Fetch the documents for this query.
   ///
@@ -84,7 +84,10 @@ abstract class Query<T extends Object?> {
   Query<T> limitToLast(int limit);
 
   /// Notifies of query results at this location.
-  Stream<QuerySnapshot<T>> snapshots({bool includeMetadataChanges = false});
+  Stream<QuerySnapshot<T>> snapshots({
+    bool includeMetadataChanges = false,
+    ListenSource source = ListenSource.defaultSource,
+  });
 
   /// Creates and returns a new [Query] that's additionally sorted by the specified
   /// [field].
@@ -94,7 +97,7 @@ abstract class Query<T extends Object?> {
   /// calls.
   ///
   /// Furthermore, you may not use [orderBy] on the [FieldPath.documentId] [field] when
-  /// using [startAfterDocument], [startAtDocument], [endAfterDocument],
+  /// using [startAfterDocument], [startAtDocument], [endBeforeDocument],
   /// or [endAtDocument] because the order by clause on the document id
   /// is added by these methods implicitly.
   Query<T> orderBy(Object field, {bool descending = false});
@@ -116,7 +119,7 @@ abstract class Query<T extends Object?> {
   /// The [values] must be in order of [orderBy] filters.
   ///
   /// Calling this method will replace any existing cursor "start" query modifiers.
-  Query<T> startAfter(List<Object?> values);
+  Query<T> startAfter(Iterable<Object?> values);
 
   /// Creates and returns a new [Query] that starts at the provided document
   /// (inclusive). The starting position is relative to the order of the query.
@@ -135,7 +138,7 @@ abstract class Query<T extends Object?> {
   /// The [values] must be in order of [orderBy] filters.
   ///
   /// Calling this method will replace any existing cursor "start" query modifiers.
-  Query<T> startAt(List<Object?> values);
+  Query<T> startAt(Iterable<Object?> values);
 
   /// Creates and returns a new [Query] with additional filter on specified
   /// [field]. [field] refers to a field in a document.
@@ -157,9 +160,9 @@ abstract class Query<T extends Object?> {
     Object? isGreaterThan,
     Object? isGreaterThanOrEqualTo,
     Object? arrayContains,
-    List<Object?>? arrayContainsAny,
-    List<Object?>? whereIn,
-    List<Object?>? whereNotIn,
+    Iterable<Object?>? arrayContainsAny,
+    Iterable<Object?>? whereIn,
+    Iterable<Object?>? whereNotIn,
     bool? isNull,
   });
 
@@ -186,6 +189,43 @@ abstract class Query<T extends Object?> {
     required FromFirestore<R> fromFirestore,
     required ToFirestore<R> toFirestore,
   });
+
+  AggregateQuery count();
+
+  /// Calculates the specified aggregations over the documents in the
+  /// result set of the given query, without actually downloading the documents.
+  AggregateQuery aggregate(
+    AggregateField aggregateField1, [
+    AggregateField? aggregateField2,
+    AggregateField? aggregateField3,
+    AggregateField? aggregateField4,
+    AggregateField? aggregateField5,
+    AggregateField? aggregateField6,
+    AggregateField? aggregateField7,
+    AggregateField? aggregateField8,
+    AggregateField? aggregateField9,
+    AggregateField? aggregateField10,
+    AggregateField? aggregateField11,
+    AggregateField? aggregateField12,
+    AggregateField? aggregateField13,
+    AggregateField? aggregateField14,
+    AggregateField? aggregateField15,
+    AggregateField? aggregateField16,
+    AggregateField? aggregateField17,
+    AggregateField? aggregateField18,
+    AggregateField? aggregateField19,
+    AggregateField? aggregateField20,
+    AggregateField? aggregateField21,
+    AggregateField? aggregateField22,
+    AggregateField? aggregateField23,
+    AggregateField? aggregateField24,
+    AggregateField? aggregateField25,
+    AggregateField? aggregateField26,
+    AggregateField? aggregateField27,
+    AggregateField? aggregateField28,
+    AggregateField? aggregateField29,
+    AggregateField? aggregateField30,
+  ]);
 }
 
 /// Represents a [Query] over the data at a particular location.
@@ -196,7 +236,7 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
     this.firestore,
     this._delegate,
   ) {
-    QueryPlatform.verifyExtends(_delegate);
+    QueryPlatform.verify(_delegate);
   }
 
   @override
@@ -222,15 +262,6 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
   /// Returns whether the current query has a "end" cursor query.
   bool _hasEndCursor() {
     return parameters['endAt'] != null || parameters['endBefore'] != null;
-  }
-
-  /// Returns whether the current operator is an inequality operator.
-  bool _isInequality(String operator) {
-    return operator == '<' ||
-        operator == '<=' ||
-        operator == '>' ||
-        operator == '>=' ||
-        operator == '!=';
   }
 
   bool isNotIn(String operator) {
@@ -260,7 +291,9 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
       // All order by fields must exist within the snapshot
       if (field != FieldPath.documentId) {
         try {
-          values.add(documentSnapshot.get(field));
+          final codecValue =
+              _CodecUtility.valueEncode(documentSnapshot.get(field));
+          values.add(codecValue);
         } on StateError {
           throw "You are trying to start or end a query using a document for which the field '$field' (used as the orderBy) does not exist.";
         }
@@ -293,7 +326,7 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
   }
 
   /// Common handler for all non-document based cursor queries.
-  List<dynamic> _assertQueryCursorValues(List<Object?> fields) {
+  Iterable<dynamic> _assertQueryCursorValues(Iterable<Object?> fields) {
     List<List<Object?>> orders = List.from(parameters['orderBy']);
 
     assert(
@@ -308,8 +341,11 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
   /// Asserts that the query [field] is either a String or a [FieldPath].
   void _assertValidFieldType(Object field) {
     assert(
-      field is String || field is FieldPath || field == FieldPath.documentId,
-      'Supported [field] types are [String] and [FieldPath].',
+      field is String ||
+          field is FieldPath ||
+          field == FieldPath.documentId ||
+          field is Filter,
+      'Supported [field] types are [String], [FieldPath], and [Filter].',
     );
   }
 
@@ -343,9 +379,9 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
   ///
   /// Calling this method will replace any existing cursor "end" query modifiers.
   @override
-  Query<Map<String, dynamic>> endAt(List<Object?> values) {
+  Query<Map<String, dynamic>> endAt(Iterable<Object?> values) {
     _assertQueryCursorValues(values);
-    return _JsonQuery(firestore, _delegate.endAt(values));
+    return _JsonQuery(firestore, _delegate.endAt(values.toList()));
   }
 
   /// Creates and returns a new [Query] that ends before the provided document
@@ -372,11 +408,11 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
   ///
   /// Calling this method will replace any existing cursor "end" query modifiers.
   @override
-  Query<Map<String, dynamic>> endBefore(List<Object?> values) {
+  Query<Map<String, dynamic>> endBefore(Iterable<Object?> values) {
     _assertQueryCursorValues(values);
     return _JsonQuery(
       firestore,
-      _delegate.endBefore(values),
+      _delegate.endBefore(values.toList()),
     );
   }
 
@@ -418,9 +454,20 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
   @override
   Stream<QuerySnapshot<Map<String, dynamic>>> snapshots({
     bool includeMetadataChanges = false,
+    ListenSource source = ListenSource.defaultSource,
   }) {
+    if (source == ListenSource.cache &&
+        defaultTargetPlatform == TargetPlatform.windows) {
+      throw UnimplementedError(
+        'Listening from cache is not supported on Windows',
+      );
+    }
+
     return _delegate
-        .snapshots(includeMetadataChanges: includeMetadataChanges)
+        .snapshots(
+          includeMetadataChanges: includeMetadataChanges,
+          source: source,
+        )
         .map((item) => _JsonQuerySnapshot(firestore, item));
   }
 
@@ -432,7 +479,7 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
   /// calls.
   ///
   /// Furthermore, you may not use [orderBy] on the [FieldPath.documentId] [field] when
-  /// using [startAfterDocument], [startAtDocument], [endAfterDocument],
+  /// using [startAfterDocument], [startAtDocument], [endBeforeDocument],
   /// or [endAtDocument] because the order by clause on the document id
   /// is added by these methods implicitly.
   @override
@@ -470,46 +517,6 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
       orders.add([fieldPath, descending]);
     }
 
-    final List<List<dynamic>> conditions =
-        List<List<dynamic>>.from(parameters['where']);
-
-    if (conditions.isNotEmpty) {
-      for (final dynamic condition in conditions) {
-        dynamic conditionField = condition[0];
-        String operator = condition[1];
-
-        // Initial orderBy() parameter has to match every where() fieldPath parameter when
-        // inequality or 'not-in' operator is invoked
-        if (_isInequality(operator) || isNotIn(operator)) {
-          assert(
-            conditionField == orders[0][0],
-            'The initial orderBy() field "$orders[0][0]" has to be the same as '
-            'the where() field parameter "$conditionField" when an inequality operator is invoked.',
-          );
-        }
-
-        for (final dynamic order in orders) {
-          dynamic orderField = order[0];
-
-          // Any where() fieldPath parameter cannot match any orderBy() parameter when
-          // '==' operand is invoked
-          if (operator == '==') {
-            assert(
-              conditionField != orderField,
-              "The '$orderField' cannot be the same as your where() field parameter '$conditionField'.",
-            );
-          }
-
-          if (conditionField == FieldPath.documentId) {
-            assert(
-              orderField == FieldPath.documentId,
-              "'[FieldPath.documentId]' cannot be used in conjunction with a different orderBy() parameter.",
-            );
-          }
-        }
-      }
-    }
-
     return _JsonQuery(firestore, _delegate.orderBy(orders));
   }
 
@@ -538,9 +545,9 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
   ///
   /// Calling this method will replace any existing cursor "start" query modifiers.
   @override
-  Query<Map<String, dynamic>> startAfter(List<Object?> values) {
+  Query<Map<String, dynamic>> startAfter(Iterable<Object?> values) {
     _assertQueryCursorValues(values);
-    return _JsonQuery(firestore, _delegate.startAfter(values));
+    return _JsonQuery(firestore, _delegate.startAfter(values.toList()));
   }
 
   /// Creates and returns a new [Query] that starts at the provided document
@@ -568,25 +575,26 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
   ///
   /// Calling this method will replace any existing cursor "start" query modifiers.
   @override
-  Query<Map<String, dynamic>> startAt(List<Object?> values) {
+  Query<Map<String, dynamic>> startAt(Iterable<Object?> values) {
     _assertQueryCursorValues(values);
-    return _JsonQuery(firestore, _delegate.startAt(values));
+    return _JsonQuery(firestore, _delegate.startAt(values.toList()));
   }
 
   /// Creates and returns a new [Query] with additional filter on specified
-  /// [field]. [field] refers to a field in a document.
+  /// [fieldOrFilter]. [fieldOrFilter] refers to a field in a document or a [Filter] object.
   ///
-  /// The [field] may be a [String] consisting of a single field name
+  /// The [fieldOrFilter] may be a [String] consisting of a single field name
   /// (referring to a top level field in the document),
-  /// or a series of field names separated by dots '.'
-  /// (referring to a nested field in the document).
+  /// a series of field names separated by dots '.'
+  /// (referring to a nested field in the document),
+  /// or a [Filter] that can be used to combine multiple conditions.
   /// Alternatively, the [field] can also be a [FieldPath].
   ///
   /// Only documents satisfying provided condition are included in the result
   /// set.
   @override
   Query<Map<String, dynamic>> where(
-    Object field, {
+    Object fieldOrFilter, {
     Object? isEqualTo,
     Object? isNotEqualTo,
     Object? isLessThan,
@@ -594,12 +602,32 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
     Object? isGreaterThan,
     Object? isGreaterThanOrEqualTo,
     Object? arrayContains,
-    List<Object?>? arrayContainsAny,
-    List<Object?>? whereIn,
-    List<Object?>? whereNotIn,
+    Iterable<Object?>? arrayContainsAny,
+    Iterable<Object?>? whereIn,
+    Iterable<Object?>? whereNotIn,
     bool? isNull,
   }) {
-    _assertValidFieldType(field);
+    _assertValidFieldType(fieldOrFilter);
+
+    if (fieldOrFilter is Filter) {
+      assert(
+        isEqualTo == null &&
+            isNotEqualTo == null &&
+            isLessThan == null &&
+            isLessThanOrEqualTo == null &&
+            isGreaterThan == null &&
+            isGreaterThanOrEqualTo == null &&
+            arrayContains == null &&
+            arrayContainsAny == null &&
+            whereIn == null &&
+            whereNotIn == null &&
+            isNull == null,
+        'Conditions cannot be used with a Filter. Use a single Filter instead, or use a String or a FieldPath as the first parameter.',
+      );
+      return _JsonQuery(firestore, _delegate.whereFilter(fieldOrFilter));
+    }
+
+    final field = fieldOrFilter;
 
     const ListEquality<dynamic> equality = ListEquality<dynamic>();
     final List<List<dynamic>> conditions =
@@ -653,7 +681,6 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
       }
     }
 
-    dynamic hasInequality;
     bool hasIn = false;
     bool hasNotIn = false;
     bool hasNotEqualTo = false;
@@ -668,17 +695,6 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
       dynamic field = condition[0]; // FieldPath or FieldPathType
       String operator = condition[1];
       dynamic value = condition[2];
-
-      // Initial orderBy() parameter has to match every where() fieldPath parameter when
-      // inequality operator is invoked
-      List<List<dynamic>> orders = List.from(parameters['orderBy']);
-      if (_isInequality(operator) && orders.isNotEmpty) {
-        assert(
-          field == orders[0][0],
-          "The initial orderBy() field '$orders[0][0]' has to be the same as "
-          "the where() field parameter '$field' when an inequality operator is invoked.",
-        );
-      }
 
       if (field != FieldPath.documentId && hasDocumentIdField) {
         assert(
@@ -699,20 +715,28 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
           operator == 'array-contains-any' ||
           isNotIn(operator)) {
         assert(
-          value is List,
-          "A non-empty [List] is required for '$operator' filters.",
+          value is Iterable,
+          "A non-empty [Iterable] is required for '$operator' filters.",
+        );
+        // This assert checks every operator other than "in" or "array-contains-any" have 10 or less filters
+        assert(
+          (operator == 'in' || operator == 'array-contains-any') ||
+              (value as Iterable).length <= 10,
+          "'$operator' filters support a maximum of 10 elements in the value [Iterable].",
+        );
+        // This assert checks whether "in" or "array-contains-any" have 30 or less filters
+        assert(
+          (operator != 'in' && operator != 'array-contains-any') ||
+              (value as Iterable).length <= 30,
+          "'$operator' filters support a maximum of 30 elements in the value [Iterable].",
         );
         assert(
-          (value as List).length <= 10,
-          "'$operator' filters support a maximum of 10 elements in the value [List].",
+          (value as Iterable).isNotEmpty,
+          "'$operator' filters require a non-empty [Iterable].",
         );
         assert(
-          (value as List).isNotEmpty,
-          "'$operator' filters require a non-empty [List].",
-        );
-        assert(
-          (value as List).where((value) => value == null).isEmpty,
-          "'$operator' filters cannot contain 'null' in the [List].",
+          (value as Iterable).where((value) => value == null).isEmpty,
+          "'$operator' filters cannot contain 'null' in the [Iterable].",
         );
       }
 
@@ -733,10 +757,19 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
           !hasNotEqualTo,
           "You cannot use 'not-in' filters with '!=' filters.",
         );
+        assert(
+          !hasIn,
+          "You cannot use 'not-in' filters with 'in' filters.",
+        );
+        hasNotIn = true;
       }
 
       if (operator == 'in') {
         assert(!hasIn, "You cannot use 'whereIn' filters more than once.");
+        assert(
+          !hasNotIn,
+          "You cannot use 'in' filters with 'not-in' filters.",
+        );
         hasIn = true;
       }
 
@@ -756,30 +789,11 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
         hasArrayContainsAny = true;
       }
 
-      if (operator == 'array-contains-any' || operator == 'in') {
-        assert(
-          !(hasIn && hasArrayContainsAny),
-          "You cannot use 'in' filters with 'array-contains-any' filters.",
-        );
-      }
-
       if (operator == 'array-contains' || operator == 'array-contains-any') {
         assert(
           !(hasArrayContains && hasArrayContainsAny),
           "You cannot use both 'array-contains-any' or 'array-contains' filters together.",
         );
-      }
-
-      if (_isInequality(operator)) {
-        if (hasInequality == null) {
-          hasInequality = field;
-        } else {
-          assert(
-            hasInequality == field,
-            'All where filters with an inequality (<, <=, >, or >=) must be '
-            "on the same field. But you have inequality filters on '$hasInequality' and '$field'.",
-          );
-        }
       }
     }
 
@@ -807,7 +821,86 @@ class _JsonQuery implements Query<Map<String, dynamic>> {
   }
 
   @override
-  int get hashCode => hashValues(runtimeType, firestore, _delegate);
+  int get hashCode => Object.hash(runtimeType, firestore, _delegate);
+
+  /// Represents an [AggregateQuery] over the data at a particular location for retrieving metadata
+  /// without retrieving the actual documents.
+  @override
+  AggregateQuery count() {
+    return AggregateQuery._(_delegate.count(), this);
+  }
+
+  /// Calculates the specified aggregations over the documents in the
+  /// result set of the given query, without actually downloading the documents.
+  @override
+  AggregateQuery aggregate(
+    AggregateField aggregateField1, [
+    AggregateField? aggregateField2,
+    AggregateField? aggregateField3,
+    AggregateField? aggregateField4,
+    AggregateField? aggregateField5,
+    AggregateField? aggregateField6,
+    AggregateField? aggregateField7,
+    AggregateField? aggregateField8,
+    AggregateField? aggregateField9,
+    AggregateField? aggregateField10,
+    AggregateField? aggregateField11,
+    AggregateField? aggregateField12,
+    AggregateField? aggregateField13,
+    AggregateField? aggregateField14,
+    AggregateField? aggregateField15,
+    AggregateField? aggregateField16,
+    AggregateField? aggregateField17,
+    AggregateField? aggregateField18,
+    AggregateField? aggregateField19,
+    AggregateField? aggregateField20,
+    AggregateField? aggregateField21,
+    AggregateField? aggregateField22,
+    AggregateField? aggregateField23,
+    AggregateField? aggregateField24,
+    AggregateField? aggregateField25,
+    AggregateField? aggregateField26,
+    AggregateField? aggregateField27,
+    AggregateField? aggregateField28,
+    AggregateField? aggregateField29,
+    AggregateField? aggregateField30,
+  ]) {
+    return AggregateQuery._(
+      _delegate.aggregate(
+        aggregateField1,
+        aggregateField2,
+        aggregateField3,
+        aggregateField4,
+        aggregateField5,
+        aggregateField6,
+        aggregateField7,
+        aggregateField8,
+        aggregateField9,
+        aggregateField10,
+        aggregateField11,
+        aggregateField12,
+        aggregateField13,
+        aggregateField14,
+        aggregateField15,
+        aggregateField16,
+        aggregateField17,
+        aggregateField18,
+        aggregateField19,
+        aggregateField20,
+        aggregateField21,
+        aggregateField22,
+        aggregateField23,
+        aggregateField24,
+        aggregateField25,
+        aggregateField26,
+        aggregateField27,
+        aggregateField28,
+        aggregateField29,
+        aggregateField30,
+      ),
+      this,
+    );
+  }
 }
 
 class _WithConverterQuery<T extends Object?> implements Query<T> {
@@ -846,9 +939,15 @@ class _WithConverterQuery<T extends Object?> implements Query<T> {
   }
 
   @override
-  Stream<QuerySnapshot<T>> snapshots({bool includeMetadataChanges = false}) {
+  Stream<QuerySnapshot<T>> snapshots({
+    bool includeMetadataChanges = false,
+    ListenSource source = ListenSource.defaultSource,
+  }) {
     return _originalQuery
-        .snapshots(includeMetadataChanges: includeMetadataChanges)
+        .snapshots(
+          includeMetadataChanges: includeMetadataChanges,
+          source: source,
+        )
         .map(
           (snapshot) => _WithConverterQuerySnapshot<T>(
             snapshot,
@@ -859,7 +958,7 @@ class _WithConverterQuery<T extends Object?> implements Query<T> {
   }
 
   @override
-  Query<T> endAt(List<Object?> values) {
+  Query<T> endAt(Iterable<Object?> values) {
     return _mapQuery(_originalQuery.endAt(values));
   }
 
@@ -869,7 +968,7 @@ class _WithConverterQuery<T extends Object?> implements Query<T> {
   }
 
   @override
-  Query<T> endBefore(List<Object?> values) {
+  Query<T> endBefore(Iterable<Object?> values) {
     return _mapQuery(_originalQuery.endBefore(values));
   }
 
@@ -894,7 +993,7 @@ class _WithConverterQuery<T extends Object?> implements Query<T> {
   }
 
   @override
-  Query<T> startAfter(List<Object?> values) {
+  Query<T> startAfter(Iterable<Object?> values) {
     return _mapQuery(_originalQuery.startAfter(values));
   }
 
@@ -904,7 +1003,7 @@ class _WithConverterQuery<T extends Object?> implements Query<T> {
   }
 
   @override
-  Query<T> startAt(List<Object?> values) {
+  Query<T> startAt(Iterable<Object?> values) {
     return _mapQuery(_originalQuery.startAt(values));
   }
 
@@ -923,9 +1022,9 @@ class _WithConverterQuery<T extends Object?> implements Query<T> {
     Object? isGreaterThan,
     Object? isGreaterThanOrEqualTo,
     Object? arrayContains,
-    List<Object?>? arrayContainsAny,
-    List<Object?>? whereIn,
-    List<Object?>? whereNotIn,
+    Iterable<Object?>? arrayContainsAny,
+    Iterable<Object?>? whereIn,
+    Iterable<Object?>? whereNotIn,
     bool? isNull,
   }) {
     return _mapQuery(
@@ -969,5 +1068,81 @@ class _WithConverterQuery<T extends Object?> implements Query<T> {
 
   @override
   int get hashCode =>
-      hashValues(runtimeType, _fromFirestore, _toFirestore, _originalQuery);
+      Object.hash(runtimeType, _fromFirestore, _toFirestore, _originalQuery);
+
+  /// Represents an [AggregateQuery] over the data at a particular location for retrieving metadata
+  /// without retrieving the actual documents.
+  @override
+  AggregateQuery count() {
+    return _originalQuery.count();
+  }
+
+  /// Calculates the specified aggregations over the documents in the
+  /// result set of the given query, without actually downloading the documents.
+  @override
+  AggregateQuery aggregate(
+    AggregateField aggregateField1, [
+    AggregateField? aggregateField2,
+    AggregateField? aggregateField3,
+    AggregateField? aggregateField4,
+    AggregateField? aggregateField5,
+    AggregateField? aggregateField6,
+    AggregateField? aggregateField7,
+    AggregateField? aggregateField8,
+    AggregateField? aggregateField9,
+    AggregateField? aggregateField10,
+    AggregateField? aggregateField11,
+    AggregateField? aggregateField12,
+    AggregateField? aggregateField13,
+    AggregateField? aggregateField14,
+    AggregateField? aggregateField15,
+    AggregateField? aggregateField16,
+    AggregateField? aggregateField17,
+    AggregateField? aggregateField18,
+    AggregateField? aggregateField19,
+    AggregateField? aggregateField20,
+    AggregateField? aggregateField21,
+    AggregateField? aggregateField22,
+    AggregateField? aggregateField23,
+    AggregateField? aggregateField24,
+    AggregateField? aggregateField25,
+    AggregateField? aggregateField26,
+    AggregateField? aggregateField27,
+    AggregateField? aggregateField28,
+    AggregateField? aggregateField29,
+    AggregateField? aggregateField30,
+  ]) {
+    return _originalQuery.aggregate(
+      aggregateField1,
+      aggregateField2,
+      aggregateField3,
+      aggregateField4,
+      aggregateField5,
+      aggregateField6,
+      aggregateField7,
+      aggregateField8,
+      aggregateField9,
+      aggregateField10,
+      aggregateField11,
+      aggregateField12,
+      aggregateField13,
+      aggregateField14,
+      aggregateField15,
+      aggregateField16,
+      aggregateField17,
+      aggregateField18,
+      aggregateField19,
+      aggregateField20,
+      aggregateField21,
+      aggregateField22,
+      aggregateField23,
+      aggregateField24,
+      aggregateField25,
+      aggregateField26,
+      aggregateField27,
+      aggregateField28,
+      aggregateField29,
+      aggregateField30,
+    );
+  }
 }

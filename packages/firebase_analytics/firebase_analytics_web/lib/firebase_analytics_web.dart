@@ -17,15 +17,22 @@ class FirebaseAnalyticsWeb extends FirebaseAnalyticsPlatform {
   /// instance of Analytics from the web plugin
   analytics_interop.Analytics? _webAnalytics;
 
+  final Map<String, dynamic>? webOptions;
+
   /// Lazily initialize [_webAnalytics] on first method call
   analytics_interop.Analytics get _delegate {
-    return _webAnalytics ??=
-        analytics_interop.getAnalyticsInstance(core_interop.app(app.name));
+    return _webAnalytics ??= analytics_interop.getAnalyticsInstance(
+      core_interop.app(app.name),
+      webOptions,
+    );
   }
 
   /// Builds an instance of [FirebaseAnalyticsWeb] with an optional [FirebaseApp] instance
   /// If [app] is null then the created instance will use the default [FirebaseApp]
-  FirebaseAnalyticsWeb({FirebaseApp? app}) : super(appInstance: app);
+  FirebaseAnalyticsWeb({
+    FirebaseApp? app,
+    this.webOptions,
+  }) : super(appInstance: app);
 
   /// Called by PluginRegistry to register this plugin for Flutter Web
   static void registerWith(Registrar registrar) {
@@ -34,8 +41,21 @@ class FirebaseAnalyticsWeb extends FirebaseAnalyticsPlatform {
   }
 
   @override
-  FirebaseAnalyticsPlatform delegateFor({FirebaseApp? app}) {
-    return FirebaseAnalyticsWeb(app: app);
+  FirebaseAnalyticsPlatform delegateFor({
+    FirebaseApp? app,
+    Map<String, dynamic>? webOptions,
+  }) {
+    return FirebaseAnalyticsWeb(app: app, webOptions: webOptions);
+  }
+
+  @override
+  Future<bool> isSupported() {
+    return analytics_interop.Analytics.isSupported();
+  }
+
+  @override
+  Future<int?> getSessionId() async {
+    throw UnimplementedError('getSessionId() is not supported on Web.');
   }
 
   @override
@@ -44,7 +64,7 @@ class FirebaseAnalyticsWeb extends FirebaseAnalyticsPlatform {
     Map<String, Object?>? parameters,
     AnalyticsCallOptions? callOptions,
   }) async {
-    return guard(() {
+    return convertWebExceptions(() {
       return _delegate.logEvent(
         name: name,
         parameters: parameters ?? {},
@@ -57,13 +77,30 @@ class FirebaseAnalyticsWeb extends FirebaseAnalyticsPlatform {
   Future<void> setConsent({
     bool? adStorageConsentGranted,
     bool? analyticsStorageConsentGranted,
+    bool? adPersonalizationSignalsConsentGranted,
+    bool? adUserDataConsentGranted,
+    bool? functionalityStorageConsentGranted,
+    bool? personalizationStorageConsentGranted,
+    bool? securityStorageConsentGranted,
   }) async {
-    throw UnimplementedError('setConsent() is not supported on Web.');
+    return convertWebExceptions(() {
+      return _delegate.setConsent(
+        adStorageConsentGranted: adStorageConsentGranted,
+        analyticsStorageConsentGranted: analyticsStorageConsentGranted,
+        adPersonalizationSignalsConsentGranted:
+            adPersonalizationSignalsConsentGranted,
+        adUserDataConsentGranted: adUserDataConsentGranted,
+        functionalityStorageConsentGranted: functionalityStorageConsentGranted,
+        personalizationStorageConsentGranted:
+            personalizationStorageConsentGranted,
+        securityStorageConsentGranted: securityStorageConsentGranted,
+      );
+    });
   }
 
   @override
   Future<void> setAnalyticsCollectionEnabled(bool enabled) async {
-    return guard(() {
+    return convertWebExceptions(() {
       return _delegate.setAnalyticsCollectionEnabled(enabled: enabled);
     });
   }
@@ -73,7 +110,7 @@ class FirebaseAnalyticsWeb extends FirebaseAnalyticsPlatform {
     String? id,
     AnalyticsCallOptions? callOptions,
   }) async {
-    return guard(() {
+    return convertWebExceptions(() {
       return _delegate.setUserId(
         id: id,
         callOptions: callOptions,
@@ -87,7 +124,7 @@ class FirebaseAnalyticsWeb extends FirebaseAnalyticsPlatform {
     String? screenClassOverride,
     AnalyticsCallOptions? callOptions,
   }) async {
-    return guard(() {
+    return convertWebExceptions(() {
       return _delegate.setCurrentScreen(
         screenName: screenName,
         callOptions: callOptions,
@@ -106,7 +143,7 @@ class FirebaseAnalyticsWeb extends FirebaseAnalyticsPlatform {
     required String? value,
     AnalyticsCallOptions? callOptions,
   }) async {
-    return guard(() {
+    return convertWebExceptions(() {
       return _delegate.setUserProperty(
         name: name,
         value: value,
@@ -124,10 +161,17 @@ class FirebaseAnalyticsWeb extends FirebaseAnalyticsPlatform {
 
   @override
   Future<void> setDefaultEventParameters(
-    Map<String, Object> defaultParameters,
+    Map<String, Object?>? defaultParameters,
   ) async {
     throw UnimplementedError(
       'setDefaultEventParameters() is not supported on web',
+    );
+  }
+
+  @override
+  Future<String?> getAppInstanceId() async {
+    throw UnimplementedError(
+      'getAppInstanceId() is not supported on web',
     );
   }
 }

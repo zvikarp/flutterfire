@@ -1,6 +1,342 @@
+## 0.10.0+4
+
+ - Update a dependency to the latest release.
+
+## 0.10.0+3
+
+ - Update a dependency to the latest release.
+
+## 0.10.0+2
+
+ - Update a dependency to the latest release.
+
+## 0.10.0+1
+
+ - Update a dependency to the latest release.
+
+## 0.10.0
+
+> Note: This release has breaking changes.
+
+ - **BREAKING** **REFACTOR**: android plugins require `minSdk 21`, auth requires `minSdk 23` ahead of android BOM `>=33.0.0` ([#12873](https://github.com/firebase/flutterfire/issues/12873)). ([52accfc6](https://github.com/firebase/flutterfire/commit/52accfc6c39d6360d9c0f36efe369ede990b7362))
+ - **BREAKING** **REFACTOR**: bump all iOS deployment targets to iOS 13 ahead of Firebase iOS SDK `v11` breaking change ([#12872](https://github.com/firebase/flutterfire/issues/12872)). ([de0cea2c](https://github.com/firebase/flutterfire/commit/de0cea2c3c36694a76361be784255986fac84a43))
+
+## 0.9.4+7
+
+ - Update a dependency to the latest release.
+
+## 0.9.4+6
+
+ - Update a dependency to the latest release.
+
+## 0.9.4+5
+
+ - Update a dependency to the latest release.
+
+## 0.9.4+4
+
+ - Update a dependency to the latest release.
+
+## 0.9.4+3
+
+ - Update a dependency to the latest release.
+
+## 0.9.4+2
+
+ - Update a dependency to the latest release.
+
+## 0.9.4+1
+
+ - Update a dependency to the latest release.
+
+## 0.9.4
+
+ - **FEAT**(android): Bump `compileSdk` version of Android plugins to latest stable (34) ([#12566](https://github.com/firebase/flutterfire/issues/12566)). ([e891fab2](https://github.com/firebase/flutterfire/commit/e891fab291e9beebc223000b133a6097e066a7fc))
+
+## 0.9.3+19
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+18
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+17
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+16
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+15
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+14
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+13
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+12
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+11
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+10
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+9
+
+ - **DOCS**: change old documentation links of packages in README files ([#12136](https://github.com/firebase/flutterfire/issues/12136)). ([24b9ac7e](https://github.com/firebase/flutterfire/commit/24b9ac7ec29fc9ca466c0941c2cff26d75b8568d))
+
+## 0.9.3+8
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+7
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+6
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+5
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+4
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+3
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+2
+
+ - Update a dependency to the latest release.
+
+## 0.9.3+1
+
+ - Update a dependency to the latest release.
+
+## 0.9.3
+
+ - **FEAT**: Full support of AGP 8 ([#11699](https://github.com/firebase/flutterfire/issues/11699)). ([bdb5b270](https://github.com/firebase/flutterfire/commit/bdb5b27084d225809883bdaa6aa5954650551927))
+
+## 0.9.2+7
+
+ - Update a dependency to the latest release.
+
+## 0.9.2+6
+
+ - Update a dependency to the latest release.
+
+## 0.9.2+5
+
+ - Update a dependency to the latest release.
+
+## 0.9.2+4
+
+ - Update a dependency to the latest release.
+
+## 0.9.2+3
+
+ - Update a dependency to the latest release.
+
+## 0.9.2+2
+
+ - Update a dependency to the latest release.
+
+## 0.9.2+1
+
+ - Update a dependency to the latest release.
+
+## 0.9.2
+
+ - **FEAT**: update dependency constraints to `sdk: '>=2.18.0 <4.0.0'` `flutter: '>=3.3.0'` ([#10946](https://github.com/firebase/flutterfire/issues/10946)). ([2772d10f](https://github.com/firebase/flutterfire/commit/2772d10fe510dcc28ec2d37a26b266c935699fa6))
+
+## 0.9.1+2
+
+ - **FIX**: add support for AGP 8.0 ([#10901](https://github.com/firebase/flutterfire/issues/10901)). ([a3b96735](https://github.com/firebase/flutterfire/commit/a3b967354294c295a9be8d699a6adb7f4b1dba7f))
+
+## 0.9.1+1
+
+ - Update a dependency to the latest release.
+
+## 0.9.1
+
+ - **FEAT**: bump dart sdk constraint to 2.18 ([#10618](https://github.com/firebase/flutterfire/issues/10618)). ([f80948a2](https://github.com/firebase/flutterfire/commit/f80948a28b62eead358bdb900d5a0dfb97cebb33))
+
+## 0.9.0+16
+
+ - Update a dependency to the latest release.
+
+## 0.9.0+15
+
+ - **FIX**(performance,android): fix NullPointerException errors and remove suppressed warnings ([#10560](https://github.com/firebase/flutterfire/issues/10560)). ([a54d33df](https://github.com/firebase/flutterfire/commit/a54d33df6fdc4ccb3ef0b9e955e502b750aa592b))
+
+## 0.9.0+14
+
+ - Update a dependency to the latest release.
+
+## 0.9.0+13
+
+ - Update a dependency to the latest release.
+
+## 0.9.0+12
+
+ - Update a dependency to the latest release.
+
+## 0.9.0+11
+
+ - **REFACTOR**: replace deprecated API: `Tasks.call()` ([#10361](https://github.com/firebase/flutterfire/issues/10361)). ([22407847](https://github.com/firebase/flutterfire/commit/2240784774d6673319fdb32a90c52beb015d3714))
+ - **FIX**: fix a crash that could occur with httpMetricStart when disabling collection ([#10392](https://github.com/firebase/flutterfire/issues/10392)). ([db67962b](https://github.com/firebase/flutterfire/commit/db67962b50269de7ebacc496e163fb8bb6608a12))
+
+## 0.9.0+10
+
+ - **FIX**: fix a crash that would occur when creating a trace with performance collection disabled ([#10243](https://github.com/firebase/flutterfire/issues/10243)). ([0a15ecbe](https://github.com/firebase/flutterfire/commit/0a15ecbe31a5730a6f8be2218c756a5d167e5bbd))
+
+## 0.9.0+9
+
+ - **REFACTOR**: refactor underlying implementation for the "handler system" so the handlers are generated on native side ([#9334](https://github.com/firebase/flutterfire/issues/9334)). ([08a4be6c](https://github.com/firebase/flutterfire/commit/08a4be6c0e86a3288bb6fcafd301f1519b7915ba))
+
+## 0.9.0+8
+
+ - Update a dependency to the latest release.
+
+## 0.9.0+7
+
+ - Update a dependency to the latest release.
+
+## 0.9.0+6
+
+ - Update a dependency to the latest release.
+
+## 0.9.0+5
+
+ - Update a dependency to the latest release.
+
+## 0.9.0+4
+
+ - Update a dependency to the latest release.
+
+## 0.9.0+3
+
+ - **REFACTOR**: add `verify` to `QueryPlatform` and change internal `verifyToken` API to `verify` ([#9711](https://github.com/firebase/flutterfire/issues/9711)). ([c99a842f](https://github.com/firebase/flutterfire/commit/c99a842f3e3f5f10246e73f51530cc58c42b49a3))
+
+## 0.9.0+2
+
+ - Update a dependency to the latest release.
+
+## 0.9.0+1
+
+ - Update a dependency to the latest release.
+
+## 0.9.0
+
+> Note: This release has breaking changes.
+
+ - **BREAKING** **FEAT**: Firebase iOS SDK version: `10.0.0` ([#9708](https://github.com/firebase/flutterfire/issues/9708)). ([9627c56a](https://github.com/firebase/flutterfire/commit/9627c56a37d657d0250b6f6b87d0fec1c31d4ba3))
+
+## 0.8.3+3
+
+ - Update a dependency to the latest release.
+
+## 0.8.3+2
+
+ - Update a dependency to the latest release.
+
+## 0.8.3+1
+
+ - Update a dependency to the latest release.
+
+## 0.8.3
+
+ - **FEAT**: Bump Firebase iOS SDK to 9.5.0 ([#9492](https://github.com/firebase/flutterfire/issues/9492)). ([d246ba2a](https://github.com/firebase/flutterfire/commit/d246ba2aeec3da0bf5e2b4171ea2d1ec67618226))
+
+## 0.8.2+4
+
+ - Update a dependency to the latest release.
+
+## 0.8.2+3
+
+ - Update a dependency to the latest release.
+
+## 0.8.2+2
+
+ - Update a dependency to the latest release.
+
+## 0.8.2+1
+
+ - Update a dependency to the latest release.
+
+## 0.8.2
+
+ - **FEAT**: upgrade to support v9.8.1 Firebase JS SDK ([#8235](https://github.com/firebase/flutterfire/issues/8235)). ([4b417af5](https://github.com/firebase/flutterfire/commit/4b417af574bb8a32ca8e4b3ab2ff253a22be9903))
+
+## 0.8.1+1
+
+ - **FIX**: bump `firebase_core_platform_interface` version to fix previous release. ([bea70ea5](https://github.com/firebase/flutterfire/commit/bea70ea5cbbb62cbfd2a7a74ae3a07cb12b3ee5a))
+
+## 0.8.1
+
+ - **FEAT**: Bump Firebase iOS SDK to `9.2.0` (#8594). ([79610162](https://github.com/firebase/flutterfire/commit/79610162460b8877f3bc727464a7065106f08079))
+
+## 0.8.0+14
+
+ - **REFACTOR**: use `firebase.google.com` link for `homepage` in `pubspec.yaml` (#8737). ([5d5d4d21](https://github.com/firebase/flutterfire/commit/5d5d4d213233158971d7cb896a250d050e95e1a6))
+ - **REFACTOR**: use "firebase" instead of "FirebaseExtended" as organisation in all links for this repository (#8791). ([d90b8357](https://github.com/firebase/flutterfire/commit/d90b8357db01d65e753021358668f0b129713e6b))
+ - **DOCS**: point to "firebase.google" domain for hyperlinks in the usage section of `README.md` files (for the missing packages) (#8818). ([5bda8c92](https://github.com/firebase/flutterfire/commit/5bda8c92be1651a941d1285d36e885ee0b967b11))
+
+## 0.8.0+13
+
+ - Update a dependency to the latest release.
+
+## 0.8.0+12
+
+ - Update a dependency to the latest release.
+
+## 0.8.0+11
+
+ - Update a dependency to the latest release.
+
+## 0.8.0+10
+
+ - Update a dependency to the latest release.
+
+## 0.8.0+9
+
+ - Update a dependency to the latest release.
+
+## 0.8.0+8
+
+ - Update a dependency to the latest release.
+
+## 0.8.0+7
+
+ - **FIX**: update all Dart SDK version constraints to Dart >= 2.16.0 (#8184). ([df4a5bab](https://github.com/firebase/flutterfire/commit/df4a5bab3c029399b4f257a5dd658d302efe3908))
+
+## 0.8.0+6
+
+ - **FIX**: Fix firebase_performance not recording response payload size on Android. (#8154). ([46d8bc0f](https://github.com/firebase/flutterfire/commit/46d8bc0f205f24b1e160333ddb76200543f48c89))
+
+## 0.8.0+5
+
+ - Update a dependency to the latest release.
+
 ## 0.8.0+4
 
- - **FIX**: bump Android `compileSdkVersion` to 31 (#7726). ([a9562bac](https://github.com/FirebaseExtended/flutterfire/commit/a9562bac60ba927fb3664a47a7f7eaceb277dca6))
+ - **FIX**: bump Android `compileSdkVersion` to 31 (#7726). ([a9562bac](https://github.com/firebase/flutterfire/commit/a9562bac60ba927fb3664a47a7f7eaceb277dca6))
 
 ## 0.8.0+3
 

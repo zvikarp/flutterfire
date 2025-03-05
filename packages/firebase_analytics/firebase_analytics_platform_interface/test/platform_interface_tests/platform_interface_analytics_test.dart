@@ -14,8 +14,8 @@ void main() {
 
   late TestFirebaseAnalyticsPlatform firebaseAnalyticsPlatform;
 
-  FirebaseApp? app;
-  FirebaseApp? secondaryApp;
+  late FirebaseApp app;
+  late FirebaseApp secondaryApp;
 
   group('$FirebaseAnalyticsPlatform', () {
     setUpAll(() async {
@@ -31,7 +31,7 @@ void main() {
       );
 
       firebaseAnalyticsPlatform = TestFirebaseAnalyticsPlatform(
-        app!,
+        app,
       );
     });
 
@@ -53,7 +53,7 @@ void main() {
 
     test('set.instance', () {
       FirebaseAnalyticsPlatform.instance =
-          TestFirebaseAnalyticsPlatform(secondaryApp!);
+          TestFirebaseAnalyticsPlatform(secondaryApp);
 
       expect(
         FirebaseAnalyticsPlatform.instance,
@@ -64,7 +64,7 @@ void main() {
 
     test('throws if .delegateFor() not implemented', () async {
       await expectLater(
-        () => firebaseAnalyticsPlatform.delegateFor(app: app!),
+        () => firebaseAnalyticsPlatform.delegateFor(app: app),
         throwsA(
           isA<UnimplementedError>().having(
             (e) => e.message,
@@ -194,6 +194,32 @@ void main() {
             (e) => e.message,
             'message',
             'setDefaultEventParameters() is not implemented',
+          ),
+        ),
+      );
+    });
+
+    test('throws if .getAppInstanceId() not implemented', () async {
+      await expectLater(
+        () => firebaseAnalyticsPlatform.getAppInstanceId(),
+        throwsA(
+          isA<UnimplementedError>().having(
+            (e) => e.message,
+            'message',
+            'getAppInstanceId() is not implemented',
+          ),
+        ),
+      );
+    });
+
+    test('throws if .getSessionId() not implemented', () async {
+      await expectLater(
+        () => firebaseAnalyticsPlatform.getSessionId(),
+        throwsA(
+          isA<UnimplementedError>().having(
+            (e) => e.message,
+            'message',
+            'getSessionId() is not implemented',
           ),
         ),
       );

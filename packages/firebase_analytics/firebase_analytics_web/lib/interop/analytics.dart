@@ -4,22 +4,27 @@
 
 // ignore_for_file: public_member_api_docs
 
-import 'dart:js_util' as util;
+import 'dart:js_interop';
 
 import 'package:firebase_analytics_platform_interface/firebase_analytics_platform_interface.dart';
 import 'package:firebase_core_web/firebase_core_web_interop.dart';
 
-import 'firebase_interop.dart' as firebase_interop;
 import 'analytics_interop.dart' as analytics_interop;
 
 export 'analytics_interop.dart';
 
 /// Given an AppJSImp, return the Analytics instance.
-Analytics getAnalyticsInstance([App? app]) {
+Analytics getAnalyticsInstance([
+  App? app,
+  Map<String, dynamic>? options = const {},
+]) {
   return Analytics.getInstance(
     app != null
-        ? firebase_interop.analytics(app.jsObject)
-        : firebase_interop.analytics(),
+        ? analytics_interop.initializeAnalytics(
+            app.jsObject,
+            options?.jsify() ?? {}.jsify(),
+          )
+        : analytics_interop.getAnalytics(),
   );
 }
 
@@ -33,6 +38,11 @@ class Analytics extends JsObjectWrapper<analytics_interop.AnalyticsJsImpl> {
     return _expando[jsObject] ??= Analytics._fromJsObject(jsObject);
   }
 
+  static Future<bool> isSupported() async {
+    final result = await analytics_interop.isSupported().toDart;
+    return (result! as JSBoolean).toDart;
+  }
+
   /// Non-null App for this instance of analytics service.
   App get app => App.getInstance(jsObject.app);
 
@@ -41,20 +51,66 @@ class Analytics extends JsObjectWrapper<analytics_interop.AnalyticsJsImpl> {
     Map<String, Object?>? parameters,
     AnalyticsCallOptions? callOptions,
   }) {
-    return jsObject.logEvent(name, util.jsify(parameters ?? {}), callOptions);
+    return analytics_interop.logEvent(
+      jsObject,
+      name.toJS,
+      parameters?.jsify(),
+      callOptions?.asMap().jsify() as JSObject?,
+    );
+  }
+
+  void setConsent({
+    bool? adPersonalizationSignalsConsentGranted,
+    bool? adStorageConsentGranted,
+    bool? adUserDataConsentGranted,
+    bool? analyticsStorageConsentGranted,
+    bool? functionalityStorageConsentGranted,
+    bool? personalizationStorageConsentGranted,
+    bool? securityStorageConsentGranted,
+  }) {
+    final consentSettings = {
+      if (adPersonalizationSignalsConsentGranted != null)
+        'ad_personalization':
+            adPersonalizationSignalsConsentGranted ? 'granted' : 'denied',
+      if (adStorageConsentGranted != null)
+        'ad_storage': adStorageConsentGranted ? 'granted' : 'denied',
+      if (adUserDataConsentGranted != null)
+        'ad_user_data': adUserDataConsentGranted ? 'granted' : 'denied',
+      if (analyticsStorageConsentGranted != null)
+        'analytics_storage':
+            analyticsStorageConsentGranted ? 'granted' : 'denied',
+      if (functionalityStorageConsentGranted != null)
+        'functionality_storage':
+            functionalityStorageConsentGranted ? 'granted' : 'denied',
+      if (personalizationStorageConsentGranted != null)
+        'personalization_storage':
+            personalizationStorageConsentGranted ? 'granted' : 'denied',
+      if (securityStorageConsentGranted != null)
+        'security_storage':
+            securityStorageConsentGranted ? 'granted' : 'denied',
+    }.jsify();
+
+    return analytics_interop.setConsent(
+      consentSettings,
+    );
   }
 
   void setAnalyticsCollectionEnabled({required bool enabled}) {
-    return jsObject.setAnalyticsCollectionEnabled(enabled);
+    return analytics_interop.setAnalyticsCollectionEnabled(
+      jsObject,
+      enabled.toJS,
+    );
   }
 
   void setCurrentScreen({
     String? screenName,
     AnalyticsCallOptions? callOptions,
   }) {
-    return jsObject.setCurrentScreen(
-      screenName,
-      callOptions,
+    return analytics_interop.logEvent(
+      jsObject,
+      'screen_view'.toJS,
+      {'firebase_screen': screenName}.jsify(),
+      callOptions?.asMap().jsify() as JSObject?,
     );
   }
 
@@ -62,9 +118,10 @@ class Analytics extends JsObjectWrapper<analytics_interop.AnalyticsJsImpl> {
     String? id,
     AnalyticsCallOptions? callOptions,
   }) {
-    return jsObject.setUserId(
-      id,
-      callOptions,
+    return analytics_interop.setUserId(
+      jsObject,
+      id?.toJS,
+      callOptions?.asMap().jsify() as JSObject?,
     );
   }
 
@@ -73,9 +130,10 @@ class Analytics extends JsObjectWrapper<analytics_interop.AnalyticsJsImpl> {
     required String? value,
     AnalyticsCallOptions? callOptions,
   }) {
-    return jsObject.setUserProperties(
-      {name: value},
-      callOptions,
+    return analytics_interop.setUserProperties(
+      jsObject,
+      {name: value}.jsify(),
+      callOptions?.asMap().jsify() as JSObject?,
     );
   }
 }

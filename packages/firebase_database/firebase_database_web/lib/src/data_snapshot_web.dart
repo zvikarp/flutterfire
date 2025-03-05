@@ -1,4 +1,8 @@
-part of firebase_database_web;
+// Copyright 2022, the Chromium project authors.  Please see the AUTHORS file
+// for details. All rights reserved. Use of this source code is governed by a
+// BSD-style license that can be found in the LICENSE file.
+
+part of '../firebase_database_web.dart';
 
 /// Web implementation for firebase [DataSnapshotPlatform]
 class DataSnapshotWeb extends DataSnapshotPlatform {
@@ -28,7 +32,7 @@ class DataSnapshotWeb extends DataSnapshotPlatform {
     return Iterable<DataSnapshotPlatform>.generate(snapshots.length,
         (int index) {
       database_interop.DataSnapshot snapshot = snapshots[index];
-      return DataSnapshotWeb(ref.child(snapshot.key), snapshot);
+      return DataSnapshotWeb(ref.child(snapshot.key!), snapshot);
     });
   }
 }

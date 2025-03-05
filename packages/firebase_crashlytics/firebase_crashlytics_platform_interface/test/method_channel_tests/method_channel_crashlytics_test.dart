@@ -29,6 +29,7 @@ void main() {
     'reason': 'MethodChannelTest',
     'fatal': false,
     'information': 'This is a test exception',
+    'buildId': '',
     'stackTraceElements': <Map<String, String>>[
       <String, String>{
         'declaringClass': 'MethodChannelCrashlyticsTest',
@@ -36,7 +37,7 @@ void main() {
         'fileName': 'method_channel_crashlytics_test.dart',
         'lineNumber': '99999',
       }
-    ]
+    ],
   };
 
   group('$MethodChannelFirebaseCrashlytics', () {
@@ -217,6 +218,7 @@ void main() {
               'fatal': kMockError['fatal'],
               'information': kMockError['information'],
               'stackTraceElements': kMockError['stackTraceElements'],
+              'buildId': '',
             },
           ),
         ]);

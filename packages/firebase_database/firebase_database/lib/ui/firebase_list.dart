@@ -20,9 +20,7 @@ typedef ErrorCallback = void Function(FirebaseException error);
 
 /// Sorts the results of `query` on the client side using `DataSnapshot.key`.
 class FirebaseList extends ListBase<DataSnapshot>
-    with
-        // ignore: prefer_mixin
-        StreamSubscriberMixin<DatabaseEvent> {
+    with StreamSubscriberMixin<DatabaseEvent> {
   FirebaseList({
     required this.query,
     this.onChildAdded,
@@ -103,7 +101,7 @@ class FirebaseList extends ListBase<DataSnapshot>
       }
     }
 
-    throw FallThroughError();
+    throw UnsupportedError('Key not found: $key');
   }
 
   void _onChildAdded(DatabaseEvent event) {

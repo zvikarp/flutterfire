@@ -1,4 +1,4 @@
-group 'com.example.firebase_in_app_messaging'
+group 'io.flutter.plugins.firebase.inappmessaging'
 version '1.0-SNAPSHOT'
 
 buildscript {
@@ -8,7 +8,7 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:3.5.4'
+        classpath 'com.android.tools.build:gradle:8.1.2'
     }
 }
 
@@ -35,22 +35,37 @@ def getRootProjectExtOrCoreProperty(name, firebaseCoreProject) {
 }
 
 android {
-    compileSdkVersion 31
+    // Conditional for compatibility with AGP <4.2.
+    if (project.android.hasProperty("namespace")) {
+      namespace 'io.flutter.plugins.firebase.inappmessaging'
+    }
+
+    compileSdk 34
 
     defaultConfig {
-        minSdkVersion 16
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+      minSdk 21
+      testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
+
+    compileOptions {
+      sourceCompatibility JavaVersion.VERSION_1_8
+      targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    buildFeatures {
+      buildConfig = true
+    }
+
     lintOptions {
         disable 'InvalidPackage'
     }
+
     dependencies {
       api firebaseCoreProject
       implementation platform("com.google.firebase:firebase-bom:${getRootProjectExtOrCoreProperty("FirebaseSDKVersion", firebaseCoreProject)}")
       implementation 'com.google.firebase:firebase-inappmessaging-display'
+      implementation 'androidx.annotation:annotation:1.7.0'
     }
 }
 
-dependencies {
-    implementation 'androidx.annotation:annotation:1.1.0'
-}
+apply from: file("./user-agent.gradle")

@@ -8,7 +8,7 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:4.1.0'
+        classpath 'com.android.tools.build:gradle:8.1.2'
     }
 }
 
@@ -35,15 +35,24 @@ def getRootProjectExtOrCoreProperty(name, firebaseCoreProject) {
 }
 
 android {
-    compileSdkVersion 31
+    // Conditional for compatibility with AGP <4.2.
+    if (project.android.hasProperty("namespace")) {
+      namespace 'io.flutter.plugins.firebase.installations.firebase_app_installations'
+    }
+
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 21
+    }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    defaultConfig {
-        minSdkVersion 19
+    buildFeatures {
+        buildConfig true
     }
 
     dependencies {
@@ -54,7 +63,7 @@ android {
 }
 
 dependencies {
-  implementation 'androidx.annotation:annotation:1.1.0'
+  implementation 'androidx.annotation:annotation:1.7.0'
 }
 
 apply from: file("./user-agent.gradle")

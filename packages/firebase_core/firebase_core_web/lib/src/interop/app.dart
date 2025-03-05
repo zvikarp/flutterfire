@@ -5,10 +5,11 @@
 
 // ignore_for_file: public_member_api_docs
 
-import 'app_interop.dart';
-import 'core_interop.dart';
-import 'utils/js.dart';
-import 'utils/utils.dart';
+import 'dart:js_interop';
+
+import 'package:firebase_core_web/firebase_core_web_interop.dart';
+
+import 'core.dart' as core_interop;
 
 /// A Firebase App holds the initialization information for a collection
 /// of services.
@@ -20,7 +21,7 @@ class App extends JsObjectWrapper<AppJsImpl> {
   static final _expando = Expando<App>();
 
   /// Name of the app.
-  String get name => jsObject.name;
+  String get name => jsObject.name.toDart;
 
   /// Options used during [firebase.initializeApp()].
   FirebaseOptions get options => jsObject.options;
@@ -31,5 +32,5 @@ class App extends JsObjectWrapper<AppJsImpl> {
   }
 
   /// Deletes the app and frees resources of all App's services.
-  Future delete() => handleThenable(jsObject.delete());
+  Future<void> delete() => core_interop.deleteApp(jsObject).toDart;
 }

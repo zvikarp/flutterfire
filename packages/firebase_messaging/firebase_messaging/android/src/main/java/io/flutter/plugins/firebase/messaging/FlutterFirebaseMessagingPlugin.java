@@ -6,16 +6,19 @@ package io.flutter.plugins.firebase.messaging;
 
 import static io.flutter.plugins.firebase.core.FlutterFirebasePluginRegistry.registerPlugin;
 
+import android.Manifest;
 import android.app.Activity;
-import android.content.BroadcastReceiver;
-import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.core.app.NotificationManagerCompat;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.Observer;
 import com.google.android.gms.tasks.Task;
+import com.google.android.gms.tasks.TaskCompletionSource;
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.messaging.FirebaseMessaging;
@@ -36,7 +39,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /** FlutterFirebaseMessagingPlugin */
-public class FlutterFirebaseMessagingPlugin extends BroadcastReceiver
+public class FlutterFirebaseMessagingPlugin
     implements FlutterFirebasePlugin,
         MethodCallHandler,
         NewIntentListener,
@@ -46,39 +49,58 @@ public class FlutterFirebaseMessagingPlugin extends BroadcastReceiver
   private final HashMap<String, Boolean> consumedInitialMessages = new HashMap<>();
   private MethodChannel channel;
   private Activity mainActivity;
+
+  private final LiveData<RemoteMessage> liveDataRemoteMessage =
+      FlutterFirebaseRemoteMessageLiveData.getInstance();
+  private Observer<RemoteMessage> remoteMessageObserver;
+  private final LiveData<String> liveDataToken = FlutterFirebaseTokenLiveData.getInstance();
+  private Observer<String> tokenObserver;
+
   private RemoteMessage initialMessage;
+  // We store the initial notification in a separate variable
+  // because we cannot set the notification key in
+  // the initialMessage Java Builder
+  private Map<String, Object> initialMessageNotification;
+
+  FlutterFirebasePermissionManager permissionManager;
 
   private void initInstance(BinaryMessenger messenger) {
     String channelName = "plugins.flutter.io/firebase_messaging";
     channel = new MethodChannel(messenger, channelName);
     channel.setMethodCallHandler(this);
+    permissionManager = new FlutterFirebasePermissionManager();
 
-    // Register broadcast receiver
-    IntentFilter intentFilter = new IntentFilter();
-    intentFilter.addAction(FlutterFirebaseMessagingUtils.ACTION_TOKEN);
-    intentFilter.addAction(FlutterFirebaseMessagingUtils.ACTION_REMOTE_MESSAGE);
-    LocalBroadcastManager manager =
-        LocalBroadcastManager.getInstance(ContextHolder.getApplicationContext());
-    manager.registerReceiver(this, intentFilter);
+    remoteMessageObserver =
+        remoteMessage -> {
+          Map<String, Object> content =
+              FlutterFirebaseMessagingUtils.remoteMessageToMap(remoteMessage);
+          channel.invokeMethod("Messaging#onMessage", content);
+        };
+    tokenObserver = token -> channel.invokeMethod("Messaging#onTokenRefresh", token);
+    // We remove these observers in the onDetachedFromEngine method. Using "observeForever()"
+    // allows us to use without a LifecycleOwner.
+    liveDataRemoteMessage.observeForever(remoteMessageObserver);
+    liveDataToken.observeForever(tokenObserver);
 
     registerPlugin(channelName, this);
   }
 
   @Override
   public void onAttachedToEngine(FlutterPluginBinding binding) {
+    ContextHolder.setApplicationContext(binding.getApplicationContext());
     initInstance(binding.getBinaryMessenger());
   }
 
   @Override
   public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
-    if (binding.getApplicationContext() != null) {
-      LocalBroadcastManager.getInstance(binding.getApplicationContext()).unregisterReceiver(this);
-    }
+    liveDataToken.removeObserver(tokenObserver);
+    liveDataRemoteMessage.removeObserver(remoteMessageObserver);
   }
 
   @Override
   public void onAttachedToActivity(ActivityPluginBinding binding) {
     binding.addOnNewIntentListener(this);
+    binding.addRequestPermissionsResultListener(permissionManager);
     this.mainActivity = binding.getActivity();
     if (mainActivity.getIntent() != null && mainActivity.getIntent().getExtras() != null) {
       if ((mainActivity.getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)
@@ -104,163 +126,294 @@ public class FlutterFirebaseMessagingPlugin extends BroadcastReceiver
     this.mainActivity = null;
   }
 
-  // BroadcastReceiver implementation.
-  @Override
-  public void onReceive(Context context, Intent intent) {
-    String action = intent.getAction();
-
-    if (action == null) {
-      return;
-    }
-
-    if (action.equals(FlutterFirebaseMessagingUtils.ACTION_TOKEN)) {
-      String token = intent.getStringExtra(FlutterFirebaseMessagingUtils.EXTRA_TOKEN);
-      channel.invokeMethod("Messaging#onTokenRefresh", token);
-    } else if (action.equals(FlutterFirebaseMessagingUtils.ACTION_REMOTE_MESSAGE)) {
-      RemoteMessage message =
-          intent.getParcelableExtra(FlutterFirebaseMessagingUtils.EXTRA_REMOTE_MESSAGE);
-      if (message == null) return;
-      Map<String, Object> content = FlutterFirebaseMessagingUtils.remoteMessageToMap(message);
-      channel.invokeMethod("Messaging#onMessage", content);
-    }
-  }
-
   private Task<Void> deleteToken() {
-    return Tasks.call(
-        cachedThreadPool,
+    TaskCompletionSource<Void> taskCompletionSource = new TaskCompletionSource<>();
+
+    cachedThreadPool.execute(
         () -> {
-          Tasks.await(FirebaseMessaging.getInstance().deleteToken());
-          return null;
+          try {
+            Tasks.await(FirebaseMessaging.getInstance().deleteToken());
+            taskCompletionSource.setResult(null);
+          } catch (Exception e) {
+            taskCompletionSource.setException(e);
+          }
         });
+
+    return taskCompletionSource.getTask();
   }
 
   private Task<Map<String, Object>> getToken() {
-    return Tasks.call(
-        cachedThreadPool,
+    TaskCompletionSource<Map<String, Object>> taskCompletionSource = new TaskCompletionSource<>();
+
+    cachedThreadPool.execute(
         () -> {
-          String token = Tasks.await(FirebaseMessaging.getInstance().getToken());
-          return new HashMap<String, Object>() {
-            {
-              put("token", token);
-            }
-          };
+          try {
+            String token = Tasks.await(FirebaseMessaging.getInstance().getToken());
+            taskCompletionSource.setResult(
+                new HashMap<String, Object>() {
+                  {
+                    put("token", token);
+                  }
+                });
+          } catch (Exception e) {
+            taskCompletionSource.setException(e);
+          }
         });
+
+    return taskCompletionSource.getTask();
   }
 
   private Task<Void> subscribeToTopic(Map<String, Object> arguments) {
-    return Tasks.call(
-        cachedThreadPool,
+    TaskCompletionSource<Void> taskCompletionSource = new TaskCompletionSource<>();
+
+    cachedThreadPool.execute(
         () -> {
-          FirebaseMessaging firebaseMessaging =
-              FlutterFirebaseMessagingUtils.getFirebaseMessagingForArguments(arguments);
-          String topic = (String) Objects.requireNonNull(arguments.get("topic"));
-          Tasks.await(firebaseMessaging.subscribeToTopic(topic));
-          return null;
+          try {
+            FirebaseMessaging firebaseMessaging =
+                FlutterFirebaseMessagingUtils.getFirebaseMessagingForArguments(arguments);
+            String topic = (String) Objects.requireNonNull(arguments.get("topic"));
+            Tasks.await(firebaseMessaging.subscribeToTopic(topic));
+            taskCompletionSource.setResult(null);
+          } catch (Exception e) {
+            taskCompletionSource.setException(e);
+          }
         });
+
+    return taskCompletionSource.getTask();
   }
 
   private Task<Void> unsubscribeFromTopic(Map<String, Object> arguments) {
-    return Tasks.call(
-        cachedThreadPool,
-        () -> {
-          FirebaseMessaging firebaseMessaging =
-              FlutterFirebaseMessagingUtils.getFirebaseMessagingForArguments(arguments);
-          String topic = (String) Objects.requireNonNull(arguments.get("topic"));
-          Tasks.await(firebaseMessaging.unsubscribeFromTopic(topic));
-          return null;
-        });
-  }
+    TaskCompletionSource<Void> taskCompletionSource = new TaskCompletionSource<>();
 
-  private Task<Void> sendMessage(Map<String, Object> arguments) {
-    return Tasks.call(
-        cachedThreadPool,
+    cachedThreadPool.execute(
         () -> {
-          FirebaseMessaging firebaseMessaging =
-              FlutterFirebaseMessagingUtils.getFirebaseMessagingForArguments(arguments);
-          RemoteMessage remoteMessage =
-              FlutterFirebaseMessagingUtils.getRemoteMessageForArguments(arguments);
-          firebaseMessaging.send(remoteMessage);
-          return null;
+          try {
+            FirebaseMessaging firebaseMessaging =
+                FlutterFirebaseMessagingUtils.getFirebaseMessagingForArguments(arguments);
+            String topic = (String) Objects.requireNonNull(arguments.get("topic"));
+            Tasks.await(firebaseMessaging.unsubscribeFromTopic(topic));
+            taskCompletionSource.setResult(null);
+          } catch (Exception e) {
+            taskCompletionSource.setException(e);
+          }
         });
+
+    return taskCompletionSource.getTask();
+  }
+  // This API will be removed in a future release. Slated to be removed by June 2024 by Firebase.
+  // https://firebase.google.com/docs/reference/android/com/google/firebase/messaging/FirebaseMessaging#send
+  @SuppressWarnings("deprecation")
+  private Task<Void> sendMessage(Map<String, Object> arguments) {
+    TaskCompletionSource<Void> taskCompletionSource = new TaskCompletionSource<>();
+
+    cachedThreadPool.execute(
+        () -> {
+          try {
+            FirebaseMessaging firebaseMessaging =
+                FlutterFirebaseMessagingUtils.getFirebaseMessagingForArguments(arguments);
+            RemoteMessage remoteMessage =
+                FlutterFirebaseMessagingUtils.getRemoteMessageForArguments(arguments);
+            firebaseMessaging.send(remoteMessage);
+            taskCompletionSource.setResult(null);
+          } catch (Exception e) {
+            taskCompletionSource.setException(e);
+          }
+        });
+
+    return taskCompletionSource.getTask();
   }
 
   private Task<Map<String, Object>> setAutoInitEnabled(Map<String, Object> arguments) {
-    return Tasks.call(
-        cachedThreadPool,
+    TaskCompletionSource<Map<String, Object>> taskCompletionSource = new TaskCompletionSource<>();
+
+    cachedThreadPool.execute(
         () -> {
-          FirebaseMessaging firebaseMessaging =
-              FlutterFirebaseMessagingUtils.getFirebaseMessagingForArguments(arguments);
-          Boolean enabled = (Boolean) Objects.requireNonNull(arguments.get("enabled"));
-          firebaseMessaging.setAutoInitEnabled(enabled);
-          return new HashMap<String, Object>() {
-            {
-              put(
-                  FlutterFirebaseMessagingUtils.IS_AUTO_INIT_ENABLED,
-                  firebaseMessaging.isAutoInitEnabled());
-            }
-          };
+          try {
+            FirebaseMessaging firebaseMessaging =
+                FlutterFirebaseMessagingUtils.getFirebaseMessagingForArguments(arguments);
+            Boolean enabled = (Boolean) Objects.requireNonNull(arguments.get("enabled"));
+            firebaseMessaging.setAutoInitEnabled(enabled);
+            taskCompletionSource.setResult(
+                new HashMap<String, Object>() {
+                  {
+                    put(
+                        FlutterFirebaseMessagingUtils.IS_AUTO_INIT_ENABLED,
+                        firebaseMessaging.isAutoInitEnabled());
+                  }
+                });
+          } catch (Exception e) {
+            taskCompletionSource.setException(e);
+          }
         });
+
+    return taskCompletionSource.getTask();
   }
 
-  private Task<Map<String, Object>> getInitialMessage(Map<String, Object> arguments) {
-    return Tasks.call(
-        cachedThreadPool,
+  private Task<Void> setDeliveryMetricsExportToBigQuery(Map<String, Object> arguments) {
+    TaskCompletionSource<Void> taskCompletionSource = new TaskCompletionSource<>();
+
+    cachedThreadPool.execute(
         () -> {
-          if (initialMessage != null) {
-            Map<String, Object> remoteMessageMap =
-                FlutterFirebaseMessagingUtils.remoteMessageToMap(initialMessage);
-            initialMessage = null;
-            return remoteMessageMap;
+          try {
+            FirebaseMessaging firebaseMessaging =
+                FlutterFirebaseMessagingUtils.getFirebaseMessagingForArguments(arguments);
+            Boolean enabled = (Boolean) Objects.requireNonNull(arguments.get("enabled"));
+            firebaseMessaging.setDeliveryMetricsExportToBigQuery(enabled);
+            taskCompletionSource.setResult(null);
+          } catch (Exception e) {
+            taskCompletionSource.setException(e);
           }
-
-          if (mainActivity == null) {
-            return null;
-          }
-
-          Intent intent = mainActivity.getIntent();
-
-          if (intent == null || intent.getExtras() == null) {
-            return null;
-          }
-
-          // Remote Message ID can be either one of the following...
-          String messageId = intent.getExtras().getString("google.message_id");
-          if (messageId == null) messageId = intent.getExtras().getString("message_id");
-
-          // We only want to handle non-consumed initial messages.
-          if (messageId == null || consumedInitialMessages.get(messageId) != null) {
-            return null;
-          }
-
-          RemoteMessage remoteMessage =
-              FlutterFirebaseMessagingReceiver.notifications.get(messageId);
-
-          // If we can't find a copy of the remote message in memory then check from our persisted store.
-          if (remoteMessage == null) {
-            remoteMessage =
-                FlutterFirebaseMessagingStore.getInstance().getFirebaseMessage(messageId);
-            FlutterFirebaseMessagingStore.getInstance().removeFirebaseMessage(messageId);
-          }
-
-          if (remoteMessage == null) {
-            return null;
-          }
-
-          consumedInitialMessages.put(messageId, true);
-          return FlutterFirebaseMessagingUtils.remoteMessageToMap(remoteMessage);
         });
+
+    return taskCompletionSource.getTask();
+  }
+
+  private Task<Map<String, Object>> getInitialMessage() {
+    TaskCompletionSource<Map<String, Object>> taskCompletionSource = new TaskCompletionSource<>();
+
+    cachedThreadPool.execute(
+        () -> {
+          try {
+            if (initialMessage != null) {
+              Map<String, Object> remoteMessageMap =
+                  FlutterFirebaseMessagingUtils.remoteMessageToMap(initialMessage);
+              if (initialMessageNotification != null) {
+                remoteMessageMap.put("notification", initialMessageNotification);
+              }
+              taskCompletionSource.setResult(remoteMessageMap);
+              initialMessage = null;
+              initialMessageNotification = null;
+              return;
+            }
+
+            if (mainActivity == null) {
+              taskCompletionSource.setResult(null);
+              return;
+            }
+
+            Intent intent = mainActivity.getIntent();
+
+            if (intent == null || intent.getExtras() == null) {
+              taskCompletionSource.setResult(null);
+              return;
+            }
+
+            // Remote Message ID can be either one of the following...
+            String messageId = intent.getExtras().getString("google.message_id");
+            if (messageId == null) messageId = intent.getExtras().getString("message_id");
+
+            // We only want to handle non-consumed initial messages.
+            if (messageId == null || consumedInitialMessages.get(messageId) != null) {
+              taskCompletionSource.setResult(null);
+              return;
+            }
+
+            RemoteMessage remoteMessage =
+                FlutterFirebaseMessagingReceiver.notifications.get(messageId);
+            Map<String, Object> notificationMap = null;
+
+            // If we can't find a copy of the remote message in memory then check from our persisted store.
+            if (remoteMessage == null) {
+              Map<String, Object> messageMap =
+                  FlutterFirebaseMessagingStore.getInstance().getFirebaseMessageMap(messageId);
+              if (messageMap != null) {
+                remoteMessage =
+                    FlutterFirebaseMessagingUtils.getRemoteMessageForArguments(messageMap);
+
+                if (messageMap.get("notification") != null) {
+                  // noinspection
+                  notificationMap =
+                      (Map<String, Object>) uncheckedCastToMap(messageMap.get("notification"));
+                }
+              }
+              FlutterFirebaseMessagingStore.getInstance().removeFirebaseMessage(messageId);
+            }
+
+            if (remoteMessage == null) {
+              taskCompletionSource.setResult(null);
+              return;
+            }
+
+            consumedInitialMessages.put(messageId, true);
+
+            Map<String, Object> remoteMessageMap =
+                FlutterFirebaseMessagingUtils.remoteMessageToMap(remoteMessage);
+
+            // If no notification map is available in the remote message we override with the one we got
+            if (remoteMessage.getNotification() == null && notificationMap != null) {
+              remoteMessageMap.put("notification", notificationMap);
+            }
+
+            taskCompletionSource.setResult(remoteMessageMap);
+
+          } catch (Exception e) {
+            taskCompletionSource.setException(e);
+          }
+        });
+
+    return taskCompletionSource.getTask();
+  }
+
+  @RequiresApi(api = 33)
+  private Task<Map<String, Integer>> requestPermissions() {
+    TaskCompletionSource<Map<String, Integer>> taskCompletionSource = new TaskCompletionSource<>();
+    cachedThreadPool.execute(
+        () -> {
+          final Map<String, Integer> permissions = new HashMap<>();
+          try {
+            final boolean areNotificationsEnabled = checkPermissions();
+
+            if (!areNotificationsEnabled) {
+              permissionManager.requestPermissions(
+                  mainActivity,
+                  (notificationsEnabled) -> {
+                    permissions.put("authorizationStatus", notificationsEnabled);
+                    taskCompletionSource.setResult(permissions);
+                  },
+                  (String errorDescription) ->
+                      taskCompletionSource.setException(new Exception(errorDescription)));
+            } else {
+              permissions.put("authorizationStatus", 1);
+              taskCompletionSource.setResult(permissions);
+            }
+
+          } catch (Exception e) {
+            taskCompletionSource.setException(e);
+          }
+        });
+
+    return taskCompletionSource.getTask();
+  }
+
+  @RequiresApi(api = 33)
+  private Boolean checkPermissions() {
+    return ContextHolder.getApplicationContext()
+            .checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+        == PackageManager.PERMISSION_GRANTED;
   }
 
   private Task<Map<String, Integer>> getPermissions() {
-    return Tasks.call(
-        cachedThreadPool,
+    TaskCompletionSource<Map<String, Integer>> taskCompletionSource = new TaskCompletionSource<>();
+
+    cachedThreadPool.execute(
         () -> {
-          final Map<String, Integer> permissions = new HashMap<>();
-          final boolean areNotificationsEnabled =
-              NotificationManagerCompat.from(mainActivity).areNotificationsEnabled();
-          permissions.put("authorizationStatus", areNotificationsEnabled ? 1 : 0);
-          return permissions;
+          try {
+            final Map<String, Integer> permissions = new HashMap<>();
+            final boolean areNotificationsEnabled;
+            if (Build.VERSION.SDK_INT >= 33) {
+              areNotificationsEnabled = checkPermissions();
+            } else {
+              areNotificationsEnabled =
+                  NotificationManagerCompat.from(mainActivity).areNotificationsEnabled();
+            }
+            permissions.put("authorizationStatus", areNotificationsEnabled ? 1 : 0);
+            taskCompletionSource.setResult(permissions);
+          } catch (Exception e) {
+            taskCompletionSource.setException(e);
+          }
         });
+
+    return taskCompletionSource.getTask();
   }
 
   @Override
@@ -278,22 +431,28 @@ public class FlutterFirebaseMessagingPlugin extends BroadcastReceiver
         @SuppressWarnings("unchecked")
         Map<String, Object> arguments = ((Map<String, Object>) call.arguments);
 
-        long pluginCallbackHandle = 0;
-        long userCallbackHandle = 0;
+        long pluginCallbackHandle;
+        long userCallbackHandle;
 
         Object arg1 = arguments.get("pluginCallbackHandle");
         Object arg2 = arguments.get("userCallbackHandle");
 
         if (arg1 instanceof Long) {
           pluginCallbackHandle = (Long) arg1;
-        } else {
+        } else if (arg1 instanceof Integer) {
           pluginCallbackHandle = Long.valueOf((Integer) arg1);
+        } else {
+          throw new IllegalArgumentException(
+              "Expected 'Long' or 'Integer' type for 'pluginCallbackHandle'.");
         }
 
         if (arg2 instanceof Long) {
           userCallbackHandle = (Long) arg2;
-        } else {
+        } else if (arg2 instanceof Integer) {
           userCallbackHandle = Long.valueOf((Integer) arg2);
+        } else {
+          throw new IllegalArgumentException(
+              "Expected 'Long' or 'Integer' type for 'userCallbackHandle'.");
         }
 
         FlutterShellArgs shellArgs = null;
@@ -312,7 +471,7 @@ public class FlutterFirebaseMessagingPlugin extends BroadcastReceiver
         methodCallTask = Tasks.forResult(null);
         break;
       case "Messaging#getInitialMessage":
-        methodCallTask = getInitialMessage(call.arguments());
+        methodCallTask = getInitialMessage();
         break;
       case "Messaging#deleteToken":
         methodCallTask = deleteToken();
@@ -332,7 +491,18 @@ public class FlutterFirebaseMessagingPlugin extends BroadcastReceiver
       case "Messaging#setAutoInitEnabled":
         methodCallTask = setAutoInitEnabled(call.arguments());
         break;
+      case "Messaging#setDeliveryMetricsExportToBigQuery":
+        methodCallTask = setDeliveryMetricsExportToBigQuery(call.arguments());
+        break;
       case "Messaging#requestPermission":
+        if (Build.VERSION.SDK_INT >= 33) {
+          // Android version >= Android 13 requires user input if notification permission not set/granted
+          methodCallTask = requestPermissions();
+        } else {
+          // Android version < Android 13 doesn't require asking for runtime permissions.
+          methodCallTask = getPermissions();
+        }
+        break;
       case "Messaging#getNotificationSettings":
         methodCallTask = getPermissions();
         break;
@@ -368,8 +538,8 @@ public class FlutterFirebaseMessagingPlugin extends BroadcastReceiver
   }
 
   @Override
-  public boolean onNewIntent(Intent intent) {
-    if (intent == null || intent.getExtras() == null) {
+  public boolean onNewIntent(@NonNull Intent intent) {
+    if (intent.getExtras() == null) {
       return false;
     }
 
@@ -381,10 +551,17 @@ public class FlutterFirebaseMessagingPlugin extends BroadcastReceiver
     }
 
     RemoteMessage remoteMessage = FlutterFirebaseMessagingReceiver.notifications.get(messageId);
+    Map<String, Object> notificationMap = null;
 
     // If we can't find a copy of the remote message in memory then check from our persisted store.
     if (remoteMessage == null) {
-      remoteMessage = FlutterFirebaseMessagingStore.getInstance().getFirebaseMessage(messageId);
+      Map<String, Object> messageMap =
+          FlutterFirebaseMessagingStore.getInstance().getFirebaseMessageMap(messageId);
+      if (messageMap != null) {
+        remoteMessage = FlutterFirebaseMessagingUtils.getRemoteMessageForArguments(messageMap);
+        notificationMap =
+            FlutterFirebaseMessagingUtils.getRemoteMessageNotificationForArguments(messageMap);
+      }
       // Note we don't remove it here as the user may still call getInitialMessage.
     }
 
@@ -394,31 +571,54 @@ public class FlutterFirebaseMessagingPlugin extends BroadcastReceiver
 
     // Store this message for later use by getInitialMessage.
     initialMessage = remoteMessage;
+    initialMessageNotification = notificationMap;
 
     FlutterFirebaseMessagingReceiver.notifications.remove(messageId);
-    channel.invokeMethod(
-        "Messaging#onMessageOpenedApp",
-        FlutterFirebaseMessagingUtils.remoteMessageToMap(remoteMessage));
+    Map<String, Object> message = FlutterFirebaseMessagingUtils.remoteMessageToMap(remoteMessage);
+
+    if (remoteMessage.getNotification() == null && initialMessageNotification != null) {
+      message.put("notification", initialMessageNotification);
+    }
+
+    channel.invokeMethod("Messaging#onMessageOpenedApp", message);
     mainActivity.setIntent(intent);
     return true;
   }
 
   @Override
   public Task<Map<String, Object>> getPluginConstantsForFirebaseApp(FirebaseApp firebaseApp) {
-    return Tasks.call(
-        cachedThreadPool,
+    TaskCompletionSource<Map<String, Object>> taskCompletionSource = new TaskCompletionSource<>();
+
+    cachedThreadPool.execute(
         () -> {
-          Map<String, Object> constants = new HashMap<>();
-          if (firebaseApp.getName().equals("[DEFAULT]")) {
-            FirebaseMessaging firebaseMessaging = FirebaseMessaging.getInstance();
-            constants.put("AUTO_INIT_ENABLED", firebaseMessaging.isAutoInitEnabled());
+          try {
+            Map<String, Object> constants = new HashMap<>();
+            if (firebaseApp.getName().equals("[DEFAULT]")) {
+              FirebaseMessaging firebaseMessaging = FirebaseMessaging.getInstance();
+              constants.put("AUTO_INIT_ENABLED", firebaseMessaging.isAutoInitEnabled());
+            }
+            taskCompletionSource.setResult(constants);
+
+          } catch (Exception e) {
+            taskCompletionSource.setException(e);
           }
-          return constants;
         });
+
+    return taskCompletionSource.getTask();
   }
 
   @Override
   public Task<Void> didReinitializeFirebaseCore() {
-    return Tasks.call(cachedThreadPool, () -> null);
+    TaskCompletionSource<Void> taskCompletionSource = new TaskCompletionSource<>();
+
+    cachedThreadPool.execute(() -> taskCompletionSource.setResult(null));
+
+    return taskCompletionSource.getTask();
+  }
+
+  private Map<String, Object> uncheckedCastToMap(Object obj) {
+    @SuppressWarnings("unchecked")
+    Map<String, Object> result = (Map<String, Object>) obj;
+    return result;
   }
 }

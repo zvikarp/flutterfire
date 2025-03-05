@@ -5,28 +5,93 @@
 // ignore_for_file: avoid_unused_constructor_parameters, non_constant_identifier_names, comment_references
 // ignore_for_file: public_member_api_docs
 
-@JS('firebase.appCheck')
+@JS('firebase_app_check')
 library firebase_interop.app_check;
 
+import 'dart:js_interop';
+
 import 'package:firebase_core_web/firebase_core_web_interop.dart';
-import 'package:js/js.dart';
 
-@JS('AppCheck')
-abstract class AppCheckJsImpl {
-  external void activate(String? recaptchaKey);
+@JS()
+@staticInterop
+external AppCheckJsImpl initializeAppCheck(
+  AppJsImpl? app, [
+  AppCheckOptions? options,
+]);
 
-  external void setTokenAutoRefreshEnabled(bool isTokenAutoRefreshEnabled);
+@JS()
+@staticInterop
+external JSPromise /* AppCheckTokenResult */ getToken(
+  AppCheckJsImpl? appCheck,
+  JSBoolean? forceRefresh,
+);
 
-  external PromiseJsImpl<AppCheckTokenResult> getToken(bool? forceRefresh);
+@JS()
+@staticInterop
+external JSPromise /* AppCheckTokenResult */ getLimitedUseToken(
+  AppCheckJsImpl? appCheck,
+);
 
-  external Func0 onTokenChanged(
-    dynamic nextOrObserver, [
-    Func1? opt_error,
-    Func0? opt_completed,
-  ]);
+@JS()
+@staticInterop
+external JSFunction onTokenChanged(
+  AppCheckJsImpl appCheck,
+  JSAny nextOrObserver, [
+  JSFunction? opt_error,
+  JSFunction? opt_completed,
+]);
+
+@JS()
+@staticInterop
+external void setTokenAutoRefreshEnabled(
+  AppCheckJsImpl appCheck,
+  JSBoolean isTokenAutoRefreshEnabled,
+);
+
+@JS()
+@staticInterop
+abstract class ReCaptchaProvider {}
+
+@JS()
+@staticInterop
+class ReCaptchaV3Provider implements ReCaptchaProvider {
+  external factory ReCaptchaV3Provider(JSString recaptchaKey);
 }
 
 @JS()
-abstract class AppCheckTokenResult {
-  external String get token;
+@staticInterop
+class ReCaptchaEnterpriseProvider implements ReCaptchaProvider {
+  external factory ReCaptchaEnterpriseProvider(JSString recaptchaKey);
+}
+
+@JS()
+@staticInterop
+abstract class AppCheckTokenResult {}
+
+extension AppCheckTokenResultJsImplX on AppCheckTokenResult {
+  external JSString get token;
+}
+
+@anonymous
+@JS()
+@staticInterop
+class AppCheckOptions {
+  external factory AppCheckOptions({
+    JSBoolean? isTokenAutoRefreshEnabled,
+    ReCaptchaProvider provider,
+  });
+}
+
+extension AppCheckOptionsJsImplX on AppCheckOptions {
+  external JSBoolean? get isTokenAutoRefreshEnabled;
+
+  external ReCaptchaProvider get provider;
+}
+
+@JS('AppCheck')
+@staticInterop
+abstract class AppCheckJsImpl {}
+
+extension AppCheckJsImplX on AppCheckJsImpl {
+  external AppJsImpl get app;
 }

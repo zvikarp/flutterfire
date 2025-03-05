@@ -16,7 +16,7 @@ import 'test_common.dart';
 void main() {
   initializeMethodChannel();
   late FirebaseApp app;
-  late BinaryMessenger messenger;
+  late TestDefaultBinaryMessenger? messenger;
 
   setUpAll(() async {
     app = await Firebase.initializeApp(
@@ -29,7 +29,8 @@ void main() {
       ),
     );
 
-    messenger = ServicesBinding.instance!.defaultBinaryMessenger;
+    messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   });
 
   group('MethodChannelDatabase', () {
@@ -44,7 +45,8 @@ void main() {
     setUp(() async {
       database = MethodChannelDatabase(app: app, databaseURL: databaseURL);
 
-      channel.setMockMethodCallHandler((MethodCall methodCall) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
         log.add(methodCall);
 
         switch (methodCall.method) {
@@ -58,7 +60,7 @@ void main() {
               String key,
               dynamic data,
             ) async {
-              await messenger.handlePlatformMessage(
+              await messenger?.handlePlatformMessage(
                 channel.name,
                 channel.codec.encodeMethodCall(
                   MethodCall(
@@ -87,9 +89,9 @@ void main() {
               'committed': true,
               'snapshot': <String, dynamic>{
                 'key': 'fakeKey',
-                'value': updatedValue
+                'value': updatedValue,
               },
-              'childKeys': ['fakeKey']
+              'childKeys': ['fakeKey'],
             };
           default:
             return null;
@@ -118,7 +120,7 @@ void main() {
               'cacheSizeBytes': 10000,
               'loggingEnabled': true,
               'emulatorHost': 'localhost',
-              'emulatorPort': 1234
+              'emulatorPort': 1234,
             },
           ),
         ],
@@ -177,7 +179,7 @@ void main() {
       test('set & setWithPriority', () async {
         final dynamic value = <String, dynamic>{'hello': 'world'};
         final dynamic serverValue = <String, dynamic>{
-          'qux': ServerValue.increment(8)
+          'qux': ServerValue.increment(8),
         };
         const int priority = 42;
         await database.ref('foo').set(value);
@@ -223,8 +225,8 @@ void main() {
                 'path': 'baz',
                 'value': {
                   'qux': {
-                    '.sv': {'increment': 8}
-                  }
+                    '.sv': {'increment': 8},
+                  },
                 },
               },
             ),
@@ -451,7 +453,9 @@ void main() {
         final QueryPlatform query = database.ref('some/path');
 
         Future<void> simulateError(String errorMessage) async {
-          await eventChannel.binaryMessenger.handlePlatformMessage(
+          await TestDefaultBinaryMessengerBinding
+              .instance.defaultBinaryMessenger
+              .handlePlatformMessage(
             eventChannel.name,
             eventChannel.codec.encodeErrorEnvelope(
               code: errorCode,
@@ -497,7 +501,9 @@ void main() {
         final QueryPlatform query = database.ref(path);
 
         Future<void> simulateEvent(Map<String, dynamic> event) async {
-          await eventChannel.binaryMessenger.handlePlatformMessage(
+          await TestDefaultBinaryMessengerBinding
+              .instance.defaultBinaryMessenger
+              .handlePlatformMessage(
             eventChannel.name,
             eventChannel.codec.encodeSuccessEnvelope(event),
             (_) {},
@@ -550,7 +556,7 @@ void main() {
                 'eventChannelNamePrefix':
                     'foo-testApp-https://fake-database-url2.firebaseio.com-DatabaseEventType.value-[]',
               },
-            )
+            ),
           ],
         );
       });

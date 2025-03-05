@@ -55,7 +55,9 @@ void main() {
 
     group('activate', () {
       test('successful call', () async {
-        await appCheck.activate(webRecaptchaSiteKey: 'key');
+        await appCheck.activate(
+          webProvider: ReCaptchaV3Provider('key'),
+        );
 
         expect(
           methodCallLog,
@@ -64,8 +66,10 @@ void main() {
               'FirebaseAppCheck#activate',
               arguments: <String, dynamic>{
                 'appName': defaultFirebaseAppName,
+                'androidProvider': 'playIntegrity',
+                'appleProvider': 'deviceCheck',
               },
-            )
+            ),
           ],
         );
       });
@@ -81,9 +85,9 @@ void main() {
               'FirebaseAppCheck#getToken',
               arguments: <String, dynamic>{
                 'appName': defaultFirebaseAppName,
-                'forceRefresh': true
+                'forceRefresh': true,
               },
-            )
+            ),
           ],
         );
       });
@@ -100,9 +104,9 @@ void main() {
               'FirebaseAppCheck#setTokenAutoRefreshEnabled',
               arguments: <String, dynamic>{
                 'appName': defaultFirebaseAppName,
-                'isTokenAutoRefreshEnabled': false
+                'isTokenAutoRefreshEnabled': false,
               },
-            )
+            ),
           ],
         );
       });

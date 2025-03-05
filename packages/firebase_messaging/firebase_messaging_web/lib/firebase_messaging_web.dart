@@ -4,6 +4,7 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'dart:async';
+import 'dart:js_interop';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_core_web/firebase_core_web.dart';
@@ -11,10 +12,10 @@ import 'package:firebase_core_web/firebase_core_web_interop.dart'
     as core_interop;
 import 'package:firebase_messaging_platform_interface/firebase_messaging_platform_interface.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
+import 'package:web/web.dart' as web;
 
 import 'src/internals.dart';
 import 'src/interop/messaging.dart' as messaging_interop;
-import 'src/interop/notification.dart';
 import 'src/utils.dart' as utils;
 
 /// Web implementation for [FirebaseMessagingPlatform]
@@ -27,7 +28,7 @@ class FirebaseMessagingWeb extends FirebaseMessagingPlatform {
     _webMessaging ??=
         messaging_interop.getMessagingInstance(core_interop.app(app.name));
 
-    if (!_initialized && messaging_interop.isSupported()) {
+    if (!_initialized) {
       _webMessaging!.onMessage
           .listen((messaging_interop.MessagePayload webMessagePayload) {
         RemoteMessage remoteMessage =
@@ -57,8 +58,8 @@ class FirebaseMessagingWeb extends FirebaseMessagingPlatform {
 
   /// Updates user on browser support for Firebase.Messaging
   @override
-  bool isSupported() {
-    return messaging_interop.isSupported();
+  Future<bool> isSupported() {
+    return messaging_interop.Messaging.isSupported();
   }
 
   @override
@@ -96,7 +97,7 @@ class FirebaseMessagingWeb extends FirebaseMessagingPlatform {
       return;
     }
 
-    return guard(_delegate.deleteToken);
+    return convertWebExceptions(_delegate.deleteToken);
   }
 
   @override
@@ -113,7 +114,7 @@ class FirebaseMessagingWeb extends FirebaseMessagingPlatform {
       return null;
     }
 
-    return guard(
+    return convertWebExceptions(
       () => _delegate.getToken(vapidKey: vapidKey),
     );
   }
@@ -129,7 +130,7 @@ class FirebaseMessagingWeb extends FirebaseMessagingPlatform {
 
   @override
   Future<NotificationSettings> getNotificationSettings() async {
-    return utils.getNotificationSettings(WindowNotification.permission);
+    return utils.getNotificationSettings(web.Notification.permission);
   }
 
   @override
@@ -142,8 +143,9 @@ class FirebaseMessagingWeb extends FirebaseMessagingPlatform {
     bool provisional = false,
     bool sound = true,
   }) {
-    return guard(() async {
-      String status = await WindowNotification.requestPermission();
+    return convertWebExceptions(() async {
+      String status =
+          (await web.Notification.requestPermission().toDart).toDart;
       return utils.getNotificationSettings(status);
     });
   }

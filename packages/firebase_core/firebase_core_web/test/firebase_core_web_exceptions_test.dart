@@ -4,15 +4,9 @@
 // found in the LICENSE file.
 
 @TestOn('browser')
-import 'dart:js' as js;
-
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:firebase_core_web/firebase_core_web.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:js/js_util.dart' as js_util;
-
-import 'mock/firebase_mock.dart';
 
 void main() {
   group('no default app', () {
@@ -24,7 +18,7 @@ void main() {
         'should throw exception if no default app is available & no options are provided',
         () async {
       await expectLater(
-        Firebase.initializeApp,
+        FirebasePlatform.instance.initializeApp,
         throwsAssertionError,
       );
     });
@@ -39,29 +33,10 @@ void main() {
       test('should throw exception if no options are provided with a named app',
           () async {
         await expectLater(
-          () => Firebase.initializeApp(name: 'foo'),
+          () => FirebasePlatform.instance.initializeApp(name: 'foo'),
           throwsAssertionError,
         );
       });
-    });
-  });
-
-  group('.app()', () {
-    setUp(() async {
-      firebaseMock = FirebaseMock(app: js.allowInterop((String name) {
-        final dynamic error = js_util.newObject();
-        js_util.setProperty(error, 'name', 'FirebaseError');
-        js_util.setProperty(error, 'code', 'app/no-app');
-        throw error;
-      }));
-      FirebasePlatform.instance = FirebaseCoreWeb();
-    });
-
-    test('should throw exception if no named app was found', () async {
-      await expectLater(
-        () => Firebase.app('foo'),
-        throwsA(noAppExists('foo')),
-      );
     });
   });
 }

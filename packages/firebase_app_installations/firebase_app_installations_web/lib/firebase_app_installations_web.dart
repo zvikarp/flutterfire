@@ -2,13 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-library firebase_app_installations_web;
-
+import 'package:firebase_app_installations_platform_interface/firebase_app_installations_platform_interface.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_core_web/firebase_core_web.dart';
 import 'package:firebase_core_web/firebase_core_web_interop.dart'
     as core_interop;
-import 'package:firebase_app_installations_platform_interface/firebase_app_installations_platform_interface.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 
 import 'src/guard.dart';
@@ -52,21 +50,21 @@ class FirebaseAppInstallationsWeb extends FirebaseAppInstallationsPlatform {
 
   @override
   Future<void> delete() async {
-    return guard(() => _delegate.delete());
+    return convertWebExceptions(() => _delegate.delete());
   }
 
   @override
   Future<String> getId() async {
-    return guard(() => _delegate.getId());
+    return convertWebExceptions(() => _delegate.getId());
   }
 
   @override
   Future<String> getToken(bool forceRefresh) async {
-    return guard(() => _delegate.getToken(forceRefresh));
+    return convertWebExceptions(() => _delegate.getToken(forceRefresh));
   }
 
   @override
   Stream<String> get onIdChange {
-    return guard(() => _delegate.onIdChange);
+    return convertWebExceptions(() => _delegate.onIdChange);
   }
 }

@@ -2,21 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-@JS('firebase.installations')
+@JS('firebase_installations')
 library firebase_interop.installations;
 
+import 'dart:js_interop';
+
 import 'package:firebase_core_web/firebase_core_web_interop.dart';
-import 'package:js/js.dart';
+
+@JS()
+@staticInterop
+external InstallationsJsImpl getInstallations([AppJsImpl? app]);
+
+@JS()
+@staticInterop
+external JSPromise /* String */ getId(InstallationsJsImpl installations);
+
+@JS()
+@staticInterop
+external JSPromise /* String */ getToken(InstallationsJsImpl installations,
+    [JSBoolean? forceRefresh]);
+
+@JS()
+@staticInterop
+external JSPromise /* void */ deleteInstallations(
+    InstallationsJsImpl installations);
+
+@JS()
+@staticInterop
+external JSFunction onIdChange(
+    InstallationsJsImpl installations, JSFunction forceRefresh);
 
 @JS('Installations')
-abstract class InstallationsJsImpl {
+@staticInterop
+abstract class InstallationsJsImpl {}
+
+extension InstallationsJsImplExtension on InstallationsJsImpl {
   external AppJsImpl get app;
-
-  external PromiseJsImpl<void> delete();
-
-  external PromiseJsImpl<String> getId();
-
-  external PromiseJsImpl<String> getToken([bool? forceRefresh]);
-
-  external Func0 onIdChange(Func1<String, void> observer);
 }

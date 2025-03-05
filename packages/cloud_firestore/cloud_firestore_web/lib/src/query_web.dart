@@ -3,11 +3,13 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+import 'package:cloud_firestore_platform_interface/cloud_firestore_platform_interface.dart'
+    as platform_interface;
 import 'package:cloud_firestore_platform_interface/cloud_firestore_platform_interface.dart';
-import 'package:collection/collection.dart';
 import 'package:cloud_firestore_web/src/utils/encode_utility.dart';
-import 'package:flutter/material.dart';
+import 'package:collection/collection.dart';
 
+import 'aggregate_query_web.dart';
 import 'internals.dart';
 import 'interop/firestore.dart' as firestore_interop;
 import 'utils/web_utils.dart';
@@ -42,7 +44,7 @@ class QueryWeb extends QueryPlatform {
   }
 
   @override
-  int get hashCode => hashValues(
+  int get hashCode => Object.hash(
         runtimeType,
         firestore,
         _path,
@@ -99,6 +101,11 @@ class QueryWeb extends QueryPlatform {
       query = query.limitToLast(parameters['limitToLast']);
     }
 
+    if (parameters['filters'] != null) {
+      final Map<String, Object?> filter = parameters['filters']!;
+      query = query.filterWith(filter);
+    }
+
     for (final List<dynamic> condition in parameters['where']) {
       dynamic fieldPath = EncodeUtility.valueEncode(condition[0]);
       String opStr = condition[1];
@@ -120,7 +127,7 @@ class QueryWeb extends QueryPlatform {
   }
 
   @override
-  QueryPlatform endAt(List<dynamic> fields) {
+  QueryPlatform endAt(Iterable<dynamic> fields) {
     return _copyWithParameters(<String, dynamic>{
       'endAt': fields,
       'endBefore': null,
@@ -128,7 +135,8 @@ class QueryWeb extends QueryPlatform {
   }
 
   @override
-  QueryPlatform endBeforeDocument(List<dynamic> orders, List<dynamic> values) {
+  QueryPlatform endBeforeDocument(
+      Iterable<dynamic> orders, Iterable<dynamic> values) {
     return _copyWithParameters(<String, dynamic>{
       'orderBy': orders,
       'endAt': null,
@@ -137,7 +145,7 @@ class QueryWeb extends QueryPlatform {
   }
 
   @override
-  QueryPlatform endBefore(List<dynamic> fields) {
+  QueryPlatform endBefore(Iterable<dynamic> fields) {
     return _copyWithParameters(<String, dynamic>{
       'endAt': null,
       'endBefore': fields,
@@ -146,10 +154,11 @@ class QueryWeb extends QueryPlatform {
 
   @override
   Future<QuerySnapshotPlatform> get([GetOptions options = const GetOptions()]) {
-    return guard(() async {
+    return convertWebExceptions(() async {
       return convertWebQuerySnapshot(
         firestore,
         await _buildWebQueryWithParameters().get(convertGetOptions(options)),
+        options.serverTimestampBehavior,
       );
     });
   }
@@ -173,23 +182,28 @@ class QueryWeb extends QueryPlatform {
   @override
   Stream<QuerySnapshotPlatform> snapshots({
     bool includeMetadataChanges = false,
+    ListenSource source = ListenSource.defaultSource,
   }) {
-    Stream<firestore_interop.QuerySnapshot> querySnapshots;
-    if (includeMetadataChanges) {
-      querySnapshots = _buildWebQueryWithParameters().onSnapshotMetadata;
-    } else {
-      querySnapshots = _buildWebQueryWithParameters().onSnapshot;
-    }
+    Stream<firestore_interop.QuerySnapshot> querySnapshots =
+        _buildWebQueryWithParameters().onSnapshot(
+      includeMetadataChanges: includeMetadataChanges,
+      source: source,
+      hashCode: hashCode,
+    );
 
-    return guard(
+    return convertWebExceptions(
       () => querySnapshots.map((webQuerySnapshot) {
-        return convertWebQuerySnapshot(firestore, webQuerySnapshot);
+        return convertWebQuerySnapshot(
+          firestore,
+          webQuerySnapshot,
+          ServerTimestampBehavior.none,
+        );
       }),
     );
   }
 
   @override
-  QueryPlatform orderBy(List<List<dynamic>> orders) {
+  QueryPlatform orderBy(Iterable<List<dynamic>> orders) {
     return _copyWithParameters(<String, dynamic>{'orderBy': orders});
   }
 
@@ -203,7 +217,7 @@ class QueryWeb extends QueryPlatform {
   }
 
   @override
-  QueryPlatform startAfter(List<dynamic> fields) {
+  QueryPlatform startAfter(Iterable<dynamic> fields) {
     return _copyWithParameters(<String, dynamic>{
       'startAt': null,
       'startAfter': fields,
@@ -211,7 +225,8 @@ class QueryWeb extends QueryPlatform {
   }
 
   @override
-  QueryPlatform startAtDocument(List<dynamic> orders, List<dynamic> values) {
+  QueryPlatform startAtDocument(
+      Iterable<dynamic> orders, Iterable<dynamic> values) {
     return _copyWithParameters(<String, dynamic>{
       'orderBy': orders,
       'startAt': values,
@@ -220,7 +235,7 @@ class QueryWeb extends QueryPlatform {
   }
 
   @override
-  QueryPlatform startAt(List<dynamic> fields) {
+  QueryPlatform startAt(Iterable<dynamic> fields) {
     return _copyWithParameters(<String, dynamic>{
       'startAt': fields,
       'startAfter': null,
@@ -228,9 +243,149 @@ class QueryWeb extends QueryPlatform {
   }
 
   @override
-  QueryPlatform where(List<List<dynamic>> conditions) {
+  QueryPlatform where(Iterable<List<dynamic>> conditions) {
     return _copyWithParameters(<String, dynamic>{
       'where': conditions,
     });
+  }
+
+  @override
+  QueryPlatform whereFilter(FilterPlatformInterface filter) {
+    return _copyWithParameters(<String, dynamic>{
+      'filters': filter.toJson(),
+    });
+  }
+
+  @override
+  AggregateQueryPlatform count() {
+    return AggregateQueryWeb(
+      this,
+      _buildWebQueryWithParameters(),
+      [
+        AggregateQuery(
+          type: AggregateType.count,
+        )
+      ],
+    );
+  }
+
+  @override
+  AggregateQueryPlatform aggregate(
+    AggregateField aggregateField1, [
+    AggregateField? aggregateField2,
+    AggregateField? aggregateField3,
+    AggregateField? aggregateField4,
+    AggregateField? aggregateField5,
+    AggregateField? aggregateField6,
+    AggregateField? aggregateField7,
+    AggregateField? aggregateField8,
+    AggregateField? aggregateField9,
+    AggregateField? aggregateField10,
+    AggregateField? aggregateField11,
+    AggregateField? aggregateField12,
+    AggregateField? aggregateField13,
+    AggregateField? aggregateField14,
+    AggregateField? aggregateField15,
+    AggregateField? aggregateField16,
+    AggregateField? aggregateField17,
+    AggregateField? aggregateField18,
+    AggregateField? aggregateField19,
+    AggregateField? aggregateField20,
+    AggregateField? aggregateField21,
+    AggregateField? aggregateField22,
+    AggregateField? aggregateField23,
+    AggregateField? aggregateField24,
+    AggregateField? aggregateField25,
+    AggregateField? aggregateField26,
+    AggregateField? aggregateField27,
+    AggregateField? aggregateField28,
+    AggregateField? aggregateField29,
+    AggregateField? aggregateField30,
+  ]) {
+    final fields = [
+      aggregateField1,
+      aggregateField2,
+      aggregateField3,
+      aggregateField4,
+      aggregateField5,
+      aggregateField6,
+      aggregateField7,
+      aggregateField8,
+      aggregateField9,
+      aggregateField10,
+      aggregateField11,
+      aggregateField12,
+      aggregateField13,
+      aggregateField14,
+      aggregateField15,
+      aggregateField16,
+      aggregateField17,
+      aggregateField18,
+      aggregateField19,
+      aggregateField20,
+      aggregateField21,
+      aggregateField22,
+      aggregateField23,
+      aggregateField24,
+      aggregateField25,
+      aggregateField26,
+      aggregateField27,
+      aggregateField28,
+      aggregateField29,
+      aggregateField30,
+    ].whereType<AggregateField>();
+    return AggregateQueryWeb(
+      this,
+      _buildWebQueryWithParameters(),
+      fields.map((e) {
+        if (e is platform_interface.count) {
+          return AggregateQuery(
+            type: AggregateType.count,
+          );
+        } else if (e is platform_interface.sum) {
+          return AggregateQuery(
+            type: AggregateType.sum,
+            field: e.field,
+          );
+        } else if (e is platform_interface.average) {
+          return AggregateQuery(
+            type: AggregateType.average,
+            field: e.field,
+          );
+        } else {
+          throw UnsupportedError(
+            'Unsupported aggregate field type ${e.runtimeType}',
+          );
+        }
+      }).toList(),
+    );
+  }
+
+  @override
+  AggregateQueryPlatform sum(String field) {
+    return AggregateQueryWeb(
+      this,
+      _buildWebQueryWithParameters(),
+      [
+        AggregateQuery(
+          type: AggregateType.sum,
+          field: field,
+        )
+      ],
+    );
+  }
+
+  @override
+  AggregateQueryPlatform average(String field) {
+    return AggregateQueryWeb(
+      this,
+      _buildWebQueryWithParameters(),
+      [
+        AggregateQuery(
+          type: AggregateType.average,
+          field: field,
+        )
+      ],
+    );
   }
 }

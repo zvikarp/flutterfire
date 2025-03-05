@@ -1,3 +1,9 @@
+/*
+ * Copyright 2022, the Chromium project authors.  Please see the AUTHORS file
+ * for details. All rights reserved. Use of this source code is governed by a
+ * BSD-style license that can be found in the LICENSE file.
+ */
+
 package io.flutter.plugins.firebase.database;
 
 import androidx.annotation.NonNull;
@@ -122,7 +128,8 @@ public class FlutterFirebaseDatabaseException extends Exception {
       // detect it.
       code = "index-not-defined";
       message = message.replaceFirst("java.lang.Exception: ", "");
-    } else if (message.contains("Permission denied")) {
+    } else if (message.contains("Permission denied")
+        || message.contains("Client doesn't have permission")) {
       // Permission denied when using Firebase emulator does not correctly come
       // through as a DatabaseError.
       code = "permission-denied";

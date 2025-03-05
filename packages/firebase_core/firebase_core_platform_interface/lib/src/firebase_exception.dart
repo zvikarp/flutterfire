@@ -63,14 +63,14 @@ class FirebaseException implements Exception {
   }
 
   @override
-  int get hashCode => hashValues(plugin, code, message);
+  int get hashCode => Object.hash(plugin, code, message);
 
   @override
   String toString() {
     String output = '[$plugin/$code] $message';
 
     if (stackTrace != null) {
-      output += '\n\n${stackTrace.toString()}';
+      output += '\n\n$stackTrace';
     }
 
     return output;

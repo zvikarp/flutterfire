@@ -8,6 +8,7 @@
 #import <Firebase/Firebase.h>
 
 #import <firebase_core/FLTFirebasePluginRegistry.h>
+#import "FLTAppCheckProviderFactory.h"
 
 NSString *const kFLTFirebaseAppCheckChannelName = @"plugins.flutter.io/firebase_app_check";
 
@@ -18,6 +19,7 @@ NSString *const kFLTFirebaseAppCheckChannelName = @"plugins.flutter.io/firebase_
   NSMutableDictionary<NSString *, FlutterEventChannel *> *_eventChannels;
   NSMutableDictionary<NSString *, NSObject<FlutterStreamHandler> *> *_streamHandlers;
   NSObject<FlutterBinaryMessenger> *_binaryMessenger;
+  FLTAppCheckProviderFactory *_Nullable providerFactory;
 }
 
 #pragma mark - FlutterPlugin
@@ -25,6 +27,9 @@ NSString *const kFLTFirebaseAppCheckChannelName = @"plugins.flutter.io/firebase_
 - (instancetype)init:(NSObject<FlutterBinaryMessenger> *)messenger {
   self = [super init];
   if (self) {
+    self->providerFactory = [[FLTAppCheckProviderFactory alloc] init];
+    [FIRAppCheck setAppCheckProviderFactory:self->providerFactory];
+
     [[FLTFirebasePluginRegistry sharedInstance] registerFirebasePlugin:self];
     _binaryMessenger = messenger;
     _eventChannels = [NSMutableDictionary dictionary];
@@ -101,6 +106,8 @@ NSString *const kFLTFirebaseAppCheckChannelName = @"plugins.flutter.io/firebase_
     [self setTokenAutoRefreshEnabled:call.arguments withMethodCallResult:methodCallResult];
   } else if ([@"FirebaseAppCheck#registerTokenListener" isEqualToString:call.method]) {
     [self registerTokenListener:call.arguments withMethodCallResult:methodCallResult];
+  } else if ([@"FirebaseAppCheck#getLimitedUseAppCheckToken" isEqualToString:call.method]) {
+    [self getLimitedUseAppCheckToken:call.arguments withMethodCallResult:methodCallResult];
   } else {
     flutterResult(FlutterMethodNotImplemented);
   }
@@ -109,18 +116,11 @@ NSString *const kFLTFirebaseAppCheckChannelName = @"plugins.flutter.io/firebase_
 #pragma mark - Firebase App Check API
 
 - (void)activate:(id)arguments withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
-  // TODO the App Check Firebase iOS SDK doesn't allow us to set a provider
-  // TODO after Firebase core has been initialized, which means we can't currently
-  // TODO support changing providers in FlutterFire. So for now we'll do nothing.
+  NSString *appNameDart = arguments[@"appName"];
+  NSString *providerName = arguments[@"appleProvider"];
 
-  //  BOOL debug = [arguments[@"debug"] boolValue];
-  //  id<FIRAppCheckProviderFactory> provider;
-  //  if (debug) {
-  //    provider = [FIRAppCheckDebugProviderFactory alloc];
-  //  } else {
-  //    provider = [FIRDeviceCheckProviderFactory alloc];
-  //  }
-  //  [FIRAppCheck setAppCheckProviderFactory:provider];
+  FIRApp *app = [FLTFirebasePlugin firebaseAppNamed:appNameDart];
+  [self->providerFactory configure:app providerName:providerName];
   result.success(nil);
 }
 
@@ -149,13 +149,23 @@ NSString *const kFLTFirebaseAppCheckChannelName = @"plugins.flutter.io/firebase_
                      completion:^(FIRAppCheckToken *_Nullable token, NSError *_Nullable error) {
                        if (error != nil) {
                          result.error(nil, nil, nil, error);
+                       } else {
+                         result.success(token.token);
                        }
-
-                       NSMutableDictionary *response = [NSMutableDictionary dictionary];
-
-                       response[@"token"] = token.token;
-                       result.success(response);
                      }];
+}
+
+- (void)getLimitedUseAppCheckToken:(id)arguments
+              withMethodCallResult:(FLTFirebaseMethodCallResult *)result {
+  FIRAppCheck *appCheck = [self getFIRAppCheckFromArguments:arguments];
+  [appCheck
+      limitedUseTokenWithCompletion:^(FIRAppCheckToken *_Nullable token, NSError *_Nullable error) {
+        if (error != nil) {
+          result.error(nil, nil, nil, error);
+        } else {
+          result.success(token.token);
+        }
+      }];
 }
 
 - (void)setTokenAutoRefreshEnabled:(id)arguments

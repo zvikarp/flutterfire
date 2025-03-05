@@ -10,6 +10,7 @@
 .pub/
 .dart_tool/
 pubspec.lock
+pubspec_overrides.yaml
 flutter_export_environment.sh
 
 examples/all_plugins/pubspec.yaml
@@ -39,6 +40,9 @@ GeneratedPluginRegistrant.m
 GeneratedPluginRegistrant.java
 GeneratedPluginRegistrant.swift
 generated_plugin_registrant.dart
+generated_plugin_registrant.h
+generated_plugin_registrant.cc
+generated_plugins.cmake
 
 build/
 .flutter-plugins
@@ -47,7 +51,6 @@ build/
 .project
 .classpath
 .settings
-/pubspec.yaml
 .last_build_id
 
 # Docs
